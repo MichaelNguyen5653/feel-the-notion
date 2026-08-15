@@ -23,6 +23,7 @@ await esbuild.build({
 		"src/attachmentLink.ts",
 		"src/codeFence.ts",
 		"src/menuPosition.ts",
+		"src/colorWrap.ts",
 	],
 	outdir: "test/.build",
 	format: "esm",

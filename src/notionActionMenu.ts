@@ -4,6 +4,7 @@ import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 import { transformLine } from "./blockTransform";
 import { placeMenu, placeSubmenu } from "./menuPosition";
+import { planColorWrap } from "./colorWrap";
 import { t } from "./locale/helpers";
 
 export interface ActionMenuOptions {
@@ -476,30 +477,24 @@ class NotionBlockActionMenu {
 
     private wrapLineContent(tagName: string, style: string): void {
         const line = this.view.state.doc.line(this.lineNo);
-        const parts = this.splitMarkdownLine(line.text);
-        const unwrapped = parts.content
-            .replace(/^<span style="[^"]*">(.*)<\/span>$/u, "$1")
-            .replace(/^<mark style="[^"]*">(.*)<\/mark>$/u, "$1");
-        const nextContent = tagName ? `<${tagName} style="${style}">${unwrapped}</${tagName}>` : unwrapped;
-        const nextText = `${parts.prefix}${nextContent}${parts.suffix}`;
+        const plan = planColorWrap(line.text, tagName, style);
+
+        // The caret lands at the end of the content, INSIDE the tags. On an
+        // empty block that is between them, which is what makes the choice
+        // usable: Live Preview shows the raw source of the caret's line, so the
+        // tags are visible, and typing goes inside the span and comes out
+        // coloured. Without this the block rendered as nothing and could not be
+        // found again.
         dispatchBlockEdit(this.view, {
-            changes: { from: line.from, to: line.to, insert: nextText },
+            changes: { from: line.from, to: line.to, insert: plan.text },
+            selection: { anchor: line.from + plan.caretOffset },
             scrollIntoView: true,
             userEvent: "input.block-color"
         });
-    }
 
-    private splitMarkdownLine(text: string): { prefix: string; content: string; suffix: string } {
-        const blockIdMatch = text.match(/(\s\^[A-Za-z0-9-]+)$/);
-        const suffix = blockIdMatch?.[1] ?? "";
-        const body = suffix ? text.slice(0, -suffix.length) : text;
-        const prefixMatch = body.match(/^(#{1,6}\s+|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+\.\s+|>\s+)/);
-        const prefix = prefixMatch?.[1] ?? "";
-        return {
-            prefix,
-            content: body.slice(prefix.length).trim(),
-            suffix
-        };
+        // Focus follows the caret: the menu was clicked, so without this the
+        // editor is not focused and there is nothing to type into.
+        this.view.focus();
     }
 
     private reposition(): void {
