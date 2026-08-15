@@ -4,6 +4,8 @@
 
 Notion-like block editing for Obsidian's Live Preview.
 
+![Feel the Notion in use](docs/showcase.gif)
+
 ## Features
 
 - **Hover handles** — a `+` and a drag handle follow the pointer down the gutter.
@@ -14,6 +16,8 @@ Notion-like block editing for Obsidian's Live Preview.
 - **Hide syntax markers** — optional: stops text shifting sideways as the caret enters `**bold**`.
 
 Everything behavioural has a toggle in settings.
+
+![The insert menu, opened by typing a slash](docs/insert-menu.png)
 
 ## Installation
 
