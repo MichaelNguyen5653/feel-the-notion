@@ -224,11 +224,19 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
     }
 
     private getSections(): InsertSection[] {
+        // While filtering, the callout types are listed flat instead of behind
+        // a submenu row. Typing "bug" should insert a bug callout, not offer a
+        // "Callout" row that has to be opened with the mouse — the whole point
+        // of typing is to avoid reaching for it. They stay collapsed when there
+        // is no query so the resting menu is not twelve rows longer.
+        const isFiltering = this.query.trim().length > 0;
+
         return [
             { title: t("menu.headings"), items: this.getHeadingItems() },
-            { title: t("menu.insert"), items: this.getTextItems() },
+            { title: t("menu.insert"), items: this.getTextItems(isFiltering) },
             { title: "", items: this.getInlineItems() },
             { title: "", items: this.getMetaItems() },
+            { title: isFiltering ? t("menu.callout") : "", items: isFiltering ? this.getCalloutItems() : [] },
         ];
     }
 
@@ -242,12 +250,21 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         }));
     }
 
-    private getTextItems(): InsertItem[] {
-        return [
+    private getTextItems(isFiltering: boolean): InsertItem[] {
+        const items: InsertItem[] = [
             { id: "code", label: t("menu.code"), icon: "code", keywords: ["```"], action: () => this.insert("code") },
             { id: "math", label: t("menu.math"), icon: "sigma", keywords: ["latex", "$$"], action: () => this.insert("math") },
-            { id: "callout", label: t("menu.callout"), icon: this.getCalloutIcon("note"), keywords: ["admonition"], page: "callout" },
         ];
+        if (!isFiltering) {
+            items.push({
+                id: "callout",
+                label: t("menu.callout"),
+                icon: this.getCalloutIcon("note"),
+                keywords: ["admonition"],
+                page: "callout",
+            });
+        }
+        return items;
     }
 
     private getInlineItems(): InsertItem[] {
@@ -312,15 +329,22 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         if (this.options.keepEditorFocus) {
             this.submenuEl.addEventListener("mousedown", (event) => event.preventDefault());
         }
-        this.renderFloatingSection(this.submenuEl, t("menu.callout"), this.getCalloutItems());
+        this.renderFloatingSection(this.submenuEl, t("menu.callout"), this.getCalloutItems(false));
         this.positionFloatingSubmenu();
     }
 
-    private getCalloutItems(): InsertItem[] {
+    private getCalloutItems(prefixed = true): InsertItem[] {
         return CALLOUT_OPTIONS.map((option): InsertItem => ({
             id: `callout-${option.type}`,
-            label: t(`callout.${option.type}`),
+            // In the flat list both words are in the label so the query can
+            // arrive from either direction: "callout" lists them all, "bug"
+            // finds the one. Inside the submenu the heading already says
+            // "Callout", so repeating it on every row is just noise.
+            label: prefixed
+                ? `${t("menu.callout")}: ${t(`callout.${option.type}`)}`
+                : t(`callout.${option.type}`),
             icon: this.getCalloutIcon(option.type),
+            keywords: [option.type, "admonition"],
             action: () => this.insert(`callout-${option.type}`)
         }));
     }
@@ -506,9 +530,11 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         const spaceAbove = anchorTop - gap - padding;
         const placeBelow = rect.height <= spaceBelow || spaceBelow >= spaceAbove;
 
-        // 120px keeps a few rows visible rather than collapsing to a sliver in
-        // a very short window; the list scrolls inside whatever is left.
-        const maxHeight = Math.min(560, Math.max(120, placeBelow ? spaceBelow : spaceAbove));
+        // Deliberately short. The menu is meant to sit beside the line being
+        // typed, not stand in for the page — the query narrows it in a couple
+        // of keystrokes, and anything past that scrolls. 120px keeps a few
+        // rows visible rather than collapsing to a sliver in a short window.
+        const maxHeight = Math.min(300, Math.max(120, placeBelow ? spaceBelow : spaceAbove));
         this.rootEl.style.maxHeight = `${maxHeight}px`;
 
         const height = Math.min(rect.height, maxHeight);
