@@ -1,23 +1,25 @@
 import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
-import { resolveDragRange } from "./dragRange";
+import { resolveDragRange, reindentBlock, indentWidth } from "./dragRange";
 
 export class DragManager {
     private ghostEl: HTMLElement | null = null;
     private indicatorEl: HTMLElement | null = null;
     private isDragging = false;
-    private startBlock: { from: number, to: number, text: string } | null = null;
+    private startBlock: { from: number, to: number, text: string, indent: number } | null = null;
     private currentTargetLine: number | null = null;
     private ownerDocument: Document;
     private ownerWindow: Window;
+    private onDragEnd?: () => void;
 
     constructor(private plugin: NotionBlock, private view: EditorView) {
         this.ownerDocument = view.dom.ownerDocument;
         this.ownerWindow = this.ownerDocument.defaultView ?? activeWindow;
     }
 
-    startDrag(lineNo: number, event: MouseEvent) {
+    startDrag(lineNo: number, event: MouseEvent, onDragEnd?: () => void) {
+        this.onDragEnd = onDragEnd;
         this.isDragging = true;
 
         const doc = this.view.state.doc;
@@ -40,7 +42,7 @@ export class DragManager {
         const toPos = range.to;
         const text = doc.sliceString(fromPos, toPos);
 
-        this.startBlock = { from: fromPos, to: toPos, text: text };
+        this.startBlock = { from: fromPos, to: toPos, text: text, indent: range.indent };
 
         // Create ghost element
         this.ghostEl = this.ownerDocument.body.createDiv({
@@ -100,6 +102,31 @@ export class DragManager {
         this.ownerDocument.removeEventListener("mousemove", this.onMouseMove);
         this.ownerDocument.removeEventListener("mouseup", this.onMouseUp);
         this.ownerDocument.body.removeClass("is-dragging-block");
+
+        // Let the handle drop its cached line number — the drag has rewritten
+        // the document, so that number no longer means what it did.
+        this.onDragEnd?.();
+    }
+
+    /**
+     * The indent a block should take when dropped before `toLineNo`.
+     *
+     * Uses the target line when it has content, since that is the block the
+     * user is aiming beside. When dropping onto or past a blank line, the
+     * nearest non-blank line above supplies the depth instead — a blank line
+     * has no indent of its own, and taking zero from it would silently
+     * outdent the block being moved.
+     */
+    private indentAtDrop(doc: EditorView["state"]["doc"], toLineNo: number): number {
+        if (toLineNo >= 1 && toLineNo <= doc.lines) {
+            const target = doc.line(toLineNo).text;
+            if (target.trim() !== "") return indentWidth(target);
+        }
+        for (let n = Math.min(toLineNo - 1, doc.lines); n >= 1; n--) {
+            const text = doc.line(n).text;
+            if (text.trim() !== "") return indentWidth(text);
+        }
+        return 0;
     }
 
     private updateGhostPosition(x: number, y: number) {
@@ -151,9 +178,15 @@ export class DragManager {
         }
     }
 
-    private moveBlock(startBlock: { from: number, to: number, text: string }, toLineNo: number) {
+    private moveBlock(startBlock: { from: number, to: number, text: string, indent: number }, toLineNo: number) {
         const doc = this.view.state.doc;
-        const textToMove = startBlock.text;
+
+        // Adopt the indent of wherever we are landing. Without this a block
+        // dropped beside an indented one kept its original depth, breaking the
+        // nesting and desynchronising the bullet characters that Bullet Depth
+        // Markers keeps tied to depth.
+        const targetIndent = this.indentAtDrop(doc, toLineNo);
+        const textToMove = reindentBlock(startBlock.text, startBlock.indent, targetIndent);
 
         // Handle insertion at the end of the document
         if (toLineNo > doc.lines) {

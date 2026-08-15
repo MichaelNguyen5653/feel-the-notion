@@ -75,7 +75,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 if (!this.dragManager) {
                     this.dragManager = new DragManager(plugin, view);
                 }
-                this.dragManager.startDrag(this.hoveredLine!, e);
+                this.dragManager.startDrag(this.hoveredLine!, e, () => {
+                    // The document just changed under us, so any remembered
+                    // line number is meaningless. Clearing it forces the next
+                    // pointer move to resolve the line afresh.
+                    this.hoveredLine = null;
+                    this.isMouseOverHandle = false;
+                });
             }, 150);
         };
 
@@ -210,8 +216,17 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
 
         try {
             const line = view.state.doc.lineAt(pos);
-            // CRITICAL: Only update if the logical line has actually changed
-            if (this.hoveredLine !== line.number) {
+            // Update when the line changed, OR when the handle is hidden even
+            // though the pointer is over a valid line.
+            //
+            // The second half fixes handles that stopped appearing after a
+            // drag. A drag rewrites the document, so hoveredLine can still
+            // hold a number that now refers to different content; landing on a
+            // line with that same number left this guard satisfied and the
+            // handle stayed hidden until the pointer crossed into a
+            // differently-numbered line.
+            const isHidden = this.handleEl?.classList.contains("is-hidden") ?? false;
+            if (this.hoveredLine !== line.number || isHidden) {
                 this.hoveredLine = line.number;
                 this.handleEl?.classList.remove("is-hidden");
                 this.updatePosition(view);
