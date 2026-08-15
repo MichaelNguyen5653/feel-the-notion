@@ -1,3 +1,4 @@
+import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 
@@ -164,7 +165,7 @@ export class DragManager {
 
         // Handle insertion at the end of the document
         if (toLineNo > doc.lines) {
-            this.view.dispatch({
+            dispatchBlockEdit(this.view, {
                 changes: [
                     { from: doc.length, insert: "\n" + textToMove },
                     { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }
@@ -182,7 +183,7 @@ export class DragManager {
         
         if (startBlock.from < toLine.from) {
             // Moving down
-            this.view.dispatch({
+            dispatchBlockEdit(this.view, {
                 changes: [
                     { from: toLine.from, insert: textToMove + "\n" }, // Insert before the target line
                     { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }
@@ -192,7 +193,7 @@ export class DragManager {
             });
         } else {
             // Moving up
-            this.view.dispatch({
+            dispatchBlockEdit(this.view, {
                 changes: [
                     { from: toLine.from, insert: textToMove + "\n" },
                     { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }

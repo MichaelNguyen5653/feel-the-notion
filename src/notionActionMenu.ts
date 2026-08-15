@@ -1,3 +1,4 @@
+import { dispatchBlockEdit } from "./history";
 import { Notice, setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
@@ -407,7 +408,7 @@ class NotionBlockActionMenu {
         const line = this.view.state.doc.line(this.lineNo);
         const from = line.number === 1 ? line.from : line.from - 1;
         const to = line.number === 1 && this.view.state.doc.lines > 1 ? line.to + 1 : line.to;
-        this.view.dispatch({
+        dispatchBlockEdit(this.view, {
             changes: { from, to, insert: "" },
             scrollIntoView: true,
             userEvent: "delete.block"
@@ -424,7 +425,7 @@ class NotionBlockActionMenu {
         const existingId = line.text.match(/\s\^([A-Za-z0-9-]+)$/)?.[1];
         const blockId = existingId ?? `nb-${Date.now().toString(36)}`;
         if (!existingId) {
-            this.view.dispatch({
+            dispatchBlockEdit(this.view, {
                 changes: { from: line.to, insert: ` ^${blockId}` },
                 userEvent: "input.block-id"
             });
@@ -455,7 +456,7 @@ class NotionBlockActionMenu {
             .replace(/^<mark style="[^"]*">(.*)<\/mark>$/u, "$1");
         const nextContent = tagName ? `<${tagName} style="${style}">${unwrapped}</${tagName}>` : unwrapped;
         const nextText = `${parts.prefix}${nextContent}${parts.suffix}`;
-        this.view.dispatch({
+        dispatchBlockEdit(this.view, {
             changes: { from: line.from, to: line.to, insert: nextText },
             scrollIntoView: true,
             userEvent: "input.block-color"

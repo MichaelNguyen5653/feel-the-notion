@@ -1,3 +1,4 @@
+import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import { moment, Notice } from "obsidian";
 import type { TFile } from "obsidian";
@@ -59,7 +60,7 @@ function insertTextAtLineEnd(view: EditorView, lineNo: number, insertText: strin
     const prefix = needsNewLine ? "\n" : "";
     const pos = line.to;
 
-    view.dispatch({
+    dispatchBlockEdit(view, {
         changes: {
             from: pos,
             insert: prefix + insertText
@@ -117,12 +118,13 @@ export function transformLine(view: EditorView, lineNo: number, targetType: stri
         }
     }
     
-    view.dispatch({
+    dispatchBlockEdit(view, {
         changes: {
             from: line.from,
             to: line.to,
             insert: newText
-        }
+        },
+        userEvent: "input.block-transform"
     });
 }
 
@@ -134,6 +136,11 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
     let cursorOffset = 0;
     let isMetadata = false;
     let customPos: number | null = null;
+    // Changes that belong to this insert but land outside the cursor position
+    // (currently only the footnote definition appended at the end of the
+    // document). Merged into the single dispatch below so the whole insert
+    // stays one undo step.
+    const extraChanges: { from: number; to?: number; insert: string }[] = [];
 
     if (targetType.startsWith("callout-")) {
         const type = targetType.replace("callout-", "");
@@ -187,9 +194,13 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
             case "footnote": {
                 const footnoteId = Math.floor(Math.random() * 1000);
                 insertText = `[^${footnoteId}]`;
-                const docEnd = view.state.doc.length;
-                view.dispatch({
-                    changes: { from: docEnd, insert: `\n\n[^${footnoteId}]: ` }
+                // Queued rather than dispatched here on purpose. Dispatching
+                // separately made one footnote insert cost two Cmd+Z presses,
+                // with the document briefly holding a reference that pointed
+                // at no definition. Merged into the single dispatch below.
+                extraChanges.push({
+                    from: view.state.doc.length,
+                    insert: `\n\n[^${footnoteId}]: `,
                 });
                 break;
             }
@@ -203,11 +214,14 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
     // Only insert newline if current line is not empty
     const needsNewLine = isNewLine && line.text.trim().length > 0;
 
-    view.dispatch({
-        changes: {
-            from: pos,
-            insert: (needsNewLine ? "\n" : "") + insertText
-        },
+    dispatchBlockEdit(view, {
+        changes: [
+            {
+                from: pos,
+                insert: (needsNewLine ? "\n" : "") + insertText
+            },
+            ...extraChanges,
+        ],
         selection: { anchor: (customPos !== null ? 0 : pos) + (needsNewLine ? 1 : 0) + (cursorOffset || insertText.length) },
         scrollIntoView: true,
         userEvent: "insert.block"

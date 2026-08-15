@@ -9,6 +9,8 @@ export interface BlockPluginSettings {
     hideDelay: number;
     dateFormat: string;
     timeFormat: string;
+    /** Hide markdown syntax markers on the active line too, killing reflow. */
+    hideSyntaxMarkers: boolean;
 }
 
 export const DEFAULT_SETTINGS: BlockPluginSettings = {
@@ -18,6 +20,9 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     hideDelay: 200,
     dateFormat: 'YYYY-MM-DD',
     timeFormat: 'HH:mm',
+    // OFF by default: it changes editing behaviour, not just appearance.
+    // With it on, `**` cannot be clicked between or hand-edited.
+    hideSyntaxMarkers: false,
 };
 
 export class BlockPluginSettingTab extends PluginSettingTab {
@@ -98,6 +103,20 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.timeFormat)
                 .onChange(async (value) => {
                     this.plugin.settings.timeFormat = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Hide syntax markers')
+            .setDesc(
+                'Keep **, _, ==, ` and heading #s hidden even on the line you are editing, '
+                + 'so text stops shifting sideways as the caret enters a formatted span. '
+                + 'Trade-off: markers cannot be clicked between or hand-edited \u2014 use Cmd+B / Cmd+I instead.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.hideSyntaxMarkers)
+                .onChange(async (value) => {
+                    this.plugin.settings.hideSyntaxMarkers = value;
                     await this.plugin.saveSettings();
                 }));
     }

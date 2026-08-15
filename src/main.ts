@@ -1,6 +1,7 @@
 import { Plugin } from 'obsidian';
 import { BlockPluginSettings, DEFAULT_SETTINGS, BlockPluginSettingTab } from './settings';
 import { blockHandlesExtension } from './blockHandles';
+import { hideSyntaxExtension } from './hideSyntax';
 
 export default class NotionBlock extends Plugin {
     settings: BlockPluginSettings;
@@ -9,7 +10,10 @@ export default class NotionBlock extends Plugin {
         await this.loadSettings();
 
         // Register the CodeMirror 6 extension for hover handles
-        this.registerEditorExtension([blockHandlesExtension(this)]);
+        this.registerEditorExtension([
+            blockHandlesExtension(this),
+            hideSyntaxExtension(this),
+        ]);
 
         // Add settings tab
         this.addSettingTab(new BlockPluginSettingTab(this.app, this));
