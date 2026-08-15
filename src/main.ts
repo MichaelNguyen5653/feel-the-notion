@@ -2,6 +2,7 @@ import { Plugin } from 'obsidian';
 import { BlockPluginSettings, DEFAULT_SETTINGS, BlockPluginSettingTab } from './settings';
 import { blockHandlesExtension } from './blockHandles';
 import { hideSyntaxExtension } from './hideSyntax';
+import { blockSelectionExtension } from './blockSelection';
 
 export default class NotionBlock extends Plugin {
     settings: BlockPluginSettings;
@@ -13,6 +14,7 @@ export default class NotionBlock extends Plugin {
         this.registerEditorExtension([
             blockHandlesExtension(this),
             hideSyntaxExtension(this),
+            blockSelectionExtension(this),
         ]);
 
         // Add settings tab

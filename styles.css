@@ -274,3 +274,27 @@ body.is-dragging-block * {
 .menu-item-title {
     font-size: 13px;
 }
+
+/* ── Notion-style multi-block selection ─────────────────────────────────────
+   Applied by src/blockSelection.ts via Decoration.line, so the class lands on
+   .cm-line itself.
+
+   Paint only — background and border-radius. No padding, no margin, nothing
+   that changes a line box. Vertical margin on .cm-line desynchronises
+   CodeMirror's heightmap from the rendered page and sends the caret to the
+   wrong line; see the header comment in the vault's notion.css snippet.
+*/
+
+.ftn-block-selected {
+    background-color: hsla(var(--color-accent-hsl), 0.18);
+    border-radius: 3px;
+}
+
+/* While whole blocks are selected, suppress CodeMirror's own ragged
+   highlight. Without this the two stack: a darker glyph-hugging band inside
+   an edge-to-edge block tint, which reads as a rendering bug rather than as
+   selection. The class is toggled on the editor root by the view plugin. */
+.ftn-has-block-selection .cm-selectionBackground,
+.ftn-has-block-selection .cm-line ::selection {
+    background-color: transparent !important;
+}

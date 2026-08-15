@@ -11,6 +11,8 @@ export interface BlockPluginSettings {
     timeFormat: string;
     /** Hide markdown syntax markers on the active line too, killing reflow. */
     hideSyntaxMarkers: boolean;
+    /** Expand a multi-block drag selection to whole blocks, as Notion does. */
+    snapSelectionToBlocks: boolean;
 }
 
 export const DEFAULT_SETTINGS: BlockPluginSettings = {
@@ -23,6 +25,9 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // OFF by default: it changes editing behaviour, not just appearance.
     // With it on, `**` cannot be clicked between or hand-edited.
     hideSyntaxMarkers: false,
+    // OFF by default: it changes what Backspace and typing replace, so it is
+    // behaviour rather than appearance. The blue overlay is on regardless.
+    snapSelectionToBlocks: false,
 };
 
 export class BlockPluginSettingTab extends PluginSettingTab {
@@ -117,6 +122,20 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.hideSyntaxMarkers)
                 .onChange(async (value) => {
                     this.plugin.settings.hideSyntaxMarkers = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Snap selection to whole blocks')
+            .setDesc(
+                'When a mouse drag crosses a block boundary, expand the selection to whole blocks. '
+                + 'The blue block overlay is shown either way; this controls whether typing and '
+                + 'Backspace act on whole blocks too. Shift+Arrow is never snapped.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.snapSelectionToBlocks)
+                .onChange(async (value) => {
+                    this.plugin.settings.snapSelectionToBlocks = value;
                     await this.plugin.saveSettings();
                 }));
     }
