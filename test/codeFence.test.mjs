@@ -9,7 +9,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EditorState } from "@codemirror/state";
-import { isInsideCodeFence } from "./.build/codeFence.js";
+import { codeFenceContent, findCodeFence, isInsideCodeFence } from "./.build/codeFence.js";
 
 const docOf = (lines) => EditorState.create({ doc: lines.join("\n") }).doc;
 
@@ -74,4 +74,64 @@ test("the first line is never inside", () => {
 test("a document with no fences is never inside", () => {
 	const doc = docOf(["one", "two", "three"]);
 	for (let n = 1; n <= 3; n++) assert.equal(isInsideCodeFence(doc, n), false);
+});
+
+// ── the fence's own bounds ─────────────────────────────────────────────────
+
+test("findCodeFence reports the opening and closing lines", () => {
+	const doc = docOf(DOC);
+	assert.deepEqual(findCodeFence(doc, 3), { openLine: 2, closeLine: 5 });
+});
+
+test("the opening fence line belongs to its own block", () => {
+	// Cmd+A on the ``` should reach the code, not the one line under the caret.
+	assert.deepEqual(findCodeFence(docOf(DOC), 2), { openLine: 2, closeLine: 5 });
+});
+
+test("a line outside any fence has none", () => {
+	const doc = docOf(DOC);
+	assert.equal(findCodeFence(doc, 1), null);
+	assert.equal(findCodeFence(doc, 6), null);
+});
+
+test("an unclosed fence reports no closing line", () => {
+	assert.deepEqual(findCodeFence(docOf(["```", "code"]), 2), { openLine: 1, closeLine: null });
+});
+
+test("the second of two blocks is found, not the first", () => {
+	const doc = docOf(["```", "a", "```", "prose", "```", "b", "```"]);
+	assert.deepEqual(findCodeFence(doc, 6), { openLine: 5, closeLine: 7 });
+});
+
+// ── what Cmd+A selects in a code block ─────────────────────────────────────
+
+test("the content range covers the code and excludes the fences", () => {
+	const doc = docOf(DOC);
+	const range = codeFenceContent(doc, 3);
+	assert.equal(doc.sliceString(range.from, range.to), "# not a heading\n- not a bullet");
+});
+
+test("every line of a block selects the same code", () => {
+	// Whichever line the caret is on — fences included — one press gives the
+	// whole block.
+	const doc = docOf(DOC);
+	const expected = codeFenceContent(doc, 3);
+	for (const line of [2, 3, 4, 5]) {
+		assert.deepEqual(codeFenceContent(doc, line), expected, `from line ${line}`);
+	}
+});
+
+test("an unclosed block runs to the end of the document", () => {
+	const doc = docOf(["prose", "```", "a", "b"]);
+	const range = codeFenceContent(doc, 3);
+	assert.equal(doc.sliceString(range.from, range.to), "a\nb");
+});
+
+test("an empty block has no content to select", () => {
+	// The caller escalates rather than selecting nothing.
+	assert.equal(codeFenceContent(docOf(["```", "```"]), 1), null);
+});
+
+test("a line outside a fence has no content range", () => {
+	assert.equal(codeFenceContent(docOf(DOC), 1), null);
 });

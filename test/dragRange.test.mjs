@@ -263,3 +263,35 @@ test("isListItem distinguishes items from prose", () => {
 	assert.equal(isListItem("# heading"), false);
 	assert.equal(isListItem("plain"), false);
 });
+
+// ── a plain line does not get absorbed by the structured line above it ──────
+
+test("the paragraph under a heading drags alone, not the heading", () => {
+	// Found while making Cmd+A code-block aware. The upward walk stepped INTO
+	// the heading and then stopped there, so it returned the HEADING's range:
+	// grabbing "trailing paragraph" dragged "# A heading" instead.
+	const d = doc();
+	const r = resolveDragRange(d, 11, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [11, 11]);
+	assert.equal(textOf(d, r), "trailing paragraph");
+});
+
+test("the line after a closing fence is its own block", () => {
+	const d = listDoc(["```", "code", "```", "after"]);
+	const r = resolveDragRange(d, 4, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [4, 4], "must not carry the fence");
+});
+
+test("the line after a list item is still its own block", () => {
+	const d = listDoc(["- item", "plain line"]);
+	const r = resolveDragRange(d, 2, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [2, 2]);
+});
+
+test("an indented continuation still joins the item above it", () => {
+	// The rule is same-or-shallower indent, so a genuinely nested continuation
+	// must still travel with its parent.
+	const d = listDoc(["- item", "    continuation"]);
+	const r = resolveDragRange(d, 2, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [1, 2]);
+});

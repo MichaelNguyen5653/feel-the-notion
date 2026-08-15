@@ -162,3 +162,64 @@ test("Cmd+A inside a nested item takes the item and its children", () => {
 	assert.equal(plan.from, parent.from);
 	assert.equal(plan.to, doc.line(5).to, "the child travels with it, as in a drag");
 });
+
+// ── Cmd+A inside a code block ──────────────────────────────────────────────
+
+const CODE = [
+	"intro", // 1
+	"```js", // 2
+	"# not a heading", // 3
+	"", // 4
+	"- not a bullet", // 5
+	"```", // 6
+	"after", // 7
+];
+
+test("Cmd+A in a code block selects the code, fences excluded", () => {
+	// Without this the markdown walk reads the code as markdown: the "#" line
+	// looks like a heading and the "-" line like a list item, so the selection
+	// landed on whichever line happened to resemble a marker.
+	const doc = docOf(CODE.join("\n"));
+	const plan = planSelectAll(doc, EditorSelection.cursor(doc.line(3).from + 2));
+	assert.equal(
+		doc.sliceString(plan.from, plan.to),
+		"# not a heading\n\n- not a bullet"
+	);
+});
+
+test("a blank line inside a code block does not split it", () => {
+	const doc = docOf(CODE.join("\n"));
+	const plan = planSelectAll(doc, EditorSelection.cursor(doc.line(4).from));
+	assert.ok(plan.to - plan.from > 20, "the whole block, not the blank line");
+});
+
+test("Cmd+A from any line of a code block selects the same code", () => {
+	const doc = docOf(CODE.join("\n"));
+	const expected = planSelectAll(doc, EditorSelection.cursor(doc.line(3).from));
+	for (const line of [2, 4, 5, 6]) {
+		assert.deepEqual(
+			planSelectAll(doc, EditorSelection.cursor(doc.line(line).from)),
+			expected,
+			`from line ${line}`
+		);
+	}
+});
+
+test("Cmd+A again escalates from the code to the document", () => {
+	const doc = docOf(CODE.join("\n"));
+	const code = planSelectAll(doc, EditorSelection.cursor(doc.line(3).from));
+	const next = planSelectAll(doc, EditorSelection.range(code.from, code.to));
+	assert.deepEqual(next, { from: 0, to: doc.length });
+});
+
+test("Cmd+A in an empty code block escalates rather than selecting nothing", () => {
+	const doc = docOf(["```", "```", "after"].join("\n"));
+	const plan = planSelectAll(doc, EditorSelection.cursor(doc.line(2).from));
+	assert.deepEqual(plan, { from: 0, to: doc.length });
+});
+
+test("prose outside the fence is unaffected", () => {
+	const doc = docOf(CODE.join("\n"));
+	const plan = planSelectAll(doc, EditorSelection.cursor(doc.line(7).from));
+	assert.deepEqual([plan.from, plan.to], [doc.line(7).from, doc.line(7).to]);
+});

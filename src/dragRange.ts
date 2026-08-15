@@ -81,7 +81,22 @@ function findBlockStart(doc: Text, lineNo: number): number {
 	let start = lineNo;
 	while (start > 1) {
 		if (isBlockStart(doc.line(start).text)) break;
-		if (isBlank(doc.line(start - 1).text)) break;
+		const previous = doc.line(start - 1);
+		if (isBlank(previous.text)) break;
+
+		// Stop below a structured line at the same or shallower indent. It owns
+		// only what is nested under it — the mirror of findBlockEnd's rule — so
+		// a plain line sitting level with it is a separate block.
+		//
+		// Without this the line after a closing ``` or a heading walked up INTO
+		// that line, and the walk then stopped there and returned ITS range:
+		// grabbing the paragraph under a heading dragged the heading instead.
+		if (
+			isBlockStart(previous.text) &&
+			indentWidth(previous.text) >= indentWidth(doc.line(start).text)
+		) {
+			break;
+		}
 		start--;
 	}
 	return start;

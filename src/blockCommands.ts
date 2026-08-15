@@ -1,6 +1,6 @@
 import { SelectionRange, Text } from "@codemirror/state";
 import { indentString, isBlank, resolveDragRange } from "./dragRange";
-import { isInsideCodeFence } from "./codeFence";
+import { codeFenceContent, findCodeFence, isInsideCodeFence } from "./codeFence";
 
 /**
  * The two key behaviours that make editing feel block-shaped rather than
@@ -46,17 +46,43 @@ export function planSelectAll(doc: Text, range: SelectionRange): SelectPlan | nu
 	const whole = { from: 0, to: doc.length };
 	if (range.from === 0 && range.to === doc.length) return null;
 
-	const block = resolveDragRange(doc, doc.lineAt(range.head).number, "paragraph");
+	const block = blockAround(doc, doc.lineAt(range.head).number);
 
-	// An empty block has nothing to select, so escalate immediately rather than
-	// selecting a zero-width range and leaving Cmd+A stuck on it forever.
-	if (block.to <= block.from) return whole;
+	// Nothing to select — an empty block, or an empty code fence. Escalate
+	// rather than selecting a zero-width range and leaving Cmd+A stuck on it.
+	if (!block || block.to <= block.from) return whole;
+
+	// A caret always reaches for its block first, even when it sits outside the
+	// range that block resolves to — standing on a ``` fence line selects the
+	// code inside it rather than jumping straight to the whole note.
+	if (range.empty) return block;
 
 	const insideBlock = range.from >= block.from && range.to <= block.to;
 	const isWholeBlock = range.from === block.from && range.to === block.to;
-	if (insideBlock && !isWholeBlock) return { from: block.from, to: block.to };
+	if (insideBlock && !isWholeBlock) return block;
 
 	return whole;
+}
+
+/**
+ * The block Cmd+A should reach for first.
+ *
+ * Inside a fence that is the code itself, fences excluded. The normal
+ * markdown-shaped walk cannot be used there: it reads the code's own text as
+ * markdown, so a `#` comment looks like a heading and a `-` looks like a list
+ * item, and the selection lands wherever the code happens to resemble a marker.
+ */
+function blockAround(doc: Text, lineNo: number): SelectPlan | null {
+	const fence = findCodeFence(doc, lineNo);
+	if (fence) {
+		// Null here means an empty fence — nothing between the markers. The
+		// caller escalates, rather than selecting the bare ``` line, which is
+		// not a thing anyone means to select.
+		return codeFenceContent(doc, lineNo);
+	}
+
+	const block = resolveDragRange(doc, lineNo, "paragraph");
+	return { from: block.from, to: block.to };
 }
 
 /**
