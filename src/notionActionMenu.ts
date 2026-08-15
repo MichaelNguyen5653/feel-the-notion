@@ -3,7 +3,17 @@ import { Notice, setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 import { transformLine } from "./blockTransform";
+import { placeMenu, placeSubmenu } from "./menuPosition";
 import { t } from "./locale/helpers";
+
+export interface ActionMenuOptions {
+    /**
+     * Screen rectangle the menu must not cover — the handle it opened from.
+     * Without it the menu is only clamped into the window, which slides a tall
+     * one up over its own anchor.
+     */
+    avoid?: { top: number; bottom: number };
+}
 
 type MenuPage = "color" | "callout";
 type MenuAction = () => void | Promise<void>;
@@ -111,10 +121,11 @@ export function showNotionBlockActionMenu(
     plugin: NotionBlock,
     view: EditorView,
     lineNo: number,
-    pos: MenuPosition
+    pos: MenuPosition,
+    options: ActionMenuOptions = {}
 ): void {
     closeNotionBlockActionMenus();
-    const menu = new NotionBlockActionMenu(plugin, view, lineNo, pos);
+    const menu = new NotionBlockActionMenu(plugin, view, lineNo, pos, options);
     OPEN_MENUS.add(menu);
     menu.open();
 }
@@ -129,6 +140,7 @@ class NotionBlockActionMenu {
     private readonly view: EditorView;
     private readonly lineNo: number;
     private readonly pos: MenuPosition;
+    private readonly options: ActionMenuOptions;
     private readonly ownerDocument: Document;
     private readonly ownerWindow: Window;
     private rootEl: HTMLElement | null = null;
@@ -139,11 +151,18 @@ class NotionBlockActionMenu {
     private readonly handlePointerDown = (event: PointerEvent): void => this.onPointerDown(event);
     private readonly handleKeyDown = (event: KeyboardEvent): void => this.onKeyDown(event);
 
-    constructor(plugin: NotionBlock, view: EditorView, lineNo: number, pos: MenuPosition) {
+    constructor(
+        plugin: NotionBlock,
+        view: EditorView,
+        lineNo: number,
+        pos: MenuPosition,
+        options: ActionMenuOptions
+    ) {
         this.plugin = plugin;
         this.view = view;
         this.lineNo = lineNo;
         this.pos = pos;
+        this.options = options;
         this.ownerDocument = view.dom.ownerDocument;
         this.ownerWindow = this.ownerDocument.defaultView ?? activeWindow;
     }
@@ -351,6 +370,9 @@ class NotionBlockActionMenu {
         rows.forEach((row, index) => {
             row.toggleClass("is-active", index === this.activeIndex);
         });
+        // The list scrolls once the menu is capped, so arrowing past the
+        // bottom has to bring the row along or the highlight vanishes.
+        rows[this.activeIndex]?.scrollIntoView({ block: "nearest" });
     }
 
     private async activateItem(item: ActionItem): Promise<void> {
@@ -482,18 +504,25 @@ class NotionBlockActionMenu {
 
     private reposition(): void {
         if (!this.rootEl) return;
+
+        // Measured at natural height first: which side the menu goes on depends
+        // on how tall it wants to be, not on the cap left over from last time.
+        this.rootEl.style.maxHeight = "";
         const rect = this.rootEl.getBoundingClientRect();
-        const padding = 8;
-        let left = this.pos.x;
-        let top = this.pos.y;
-        if (left + rect.width > this.ownerWindow.innerWidth - padding) {
-            left = Math.max(padding, this.ownerWindow.innerWidth - rect.width - padding);
-        }
-        if (top + rect.height > this.ownerWindow.innerHeight - padding) {
-            top = Math.max(padding, this.ownerWindow.innerHeight - rect.height - padding);
-        }
-        this.rootEl.style.left = `${left}px`;
-        this.rootEl.style.top = `${top}px`;
+
+        const placement = placeMenu({
+            anchorX: this.pos.x,
+            anchorY: this.pos.y,
+            avoidTop: this.options.avoid?.top ?? this.pos.y,
+            menuWidth: rect.width,
+            menuHeight: rect.height,
+            viewportWidth: this.ownerWindow.innerWidth,
+            viewportHeight: this.ownerWindow.innerHeight,
+        });
+
+        this.rootEl.style.maxHeight = `${placement.maxHeight}px`;
+        this.rootEl.style.left = `${placement.left}px`;
+        this.rootEl.style.top = `${placement.top}px`;
         this.positionFloatingSubmenu();
     }
 
@@ -501,16 +530,18 @@ class NotionBlockActionMenu {
         if (!this.rootEl || !this.submenuEl) return;
         const rootRect = this.rootEl.getBoundingClientRect();
         const submenuRect = this.submenuEl.getBoundingClientRect();
-        const padding = 8;
-        let left = rootRect.right + 8;
-        let top = rootRect.top;
-        if (left + submenuRect.width > this.ownerWindow.innerWidth - padding) {
-            left = Math.max(padding, rootRect.left - submenuRect.width - 8);
-        }
-        if (top + submenuRect.height > this.ownerWindow.innerHeight - padding) {
-            top = Math.max(padding, this.ownerWindow.innerHeight - submenuRect.height - padding);
-        }
-        this.submenuEl.style.left = `${left}px`;
-        this.submenuEl.style.top = `${top}px`;
+
+        const placement = placeSubmenu({
+            parentLeft: rootRect.left,
+            parentRight: rootRect.right,
+            parentTop: rootRect.top,
+            menuWidth: submenuRect.width,
+            menuHeight: submenuRect.height,
+            viewportWidth: this.ownerWindow.innerWidth,
+            viewportHeight: this.ownerWindow.innerHeight,
+        });
+
+        this.submenuEl.style.left = `${placement.left}px`;
+        this.submenuEl.style.top = `${placement.top}px`;
     }
 }

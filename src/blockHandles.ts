@@ -90,10 +90,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             if (!isDragging && this.hoveredLine !== null) {
                 const rect = this.dragButton!.getBoundingClientRect();
                 closeNotionBlockInsertMenus();
-                showNotionBlockActionMenu(plugin, view, this.hoveredLine, {
-                    x: rect.left,
-                    y: rect.bottom
-                });
+                showNotionBlockActionMenu(
+                    plugin,
+                    view,
+                    this.hoveredLine,
+                    { x: rect.left, y: rect.bottom },
+                    { avoid: { top: rect.top, bottom: rect.bottom } }
+                );
             }
         };
 

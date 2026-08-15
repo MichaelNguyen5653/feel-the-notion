@@ -3,6 +3,7 @@ import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 import { RemoveRange, insertAttachmentFiles, insertBlock, insertImageFiles } from "./blockTransform";
 import { matchesQuery } from "./slashTrigger";
+import { placeMenu, placeSubmenu } from "./menuPosition";
 import { t } from "./locale/helpers";
 
 type InsertPage = "callout";
@@ -516,39 +517,24 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
     private reposition(): void {
         if (!this.rootEl) return;
 
-        const padding = 8;
-        const gap = 6;
-        const viewportHeight = this.ownerWindow.innerHeight;
-
-        // Measure at natural height first: the choice of side depends on how
-        // tall the menu wants to be, not on the cap left over from last time.
+        // Measured at natural height first: which side the menu goes on depends
+        // on how tall it wants to be, not on the cap left over from last time.
         this.rootEl.style.maxHeight = "";
         const rect = this.rootEl.getBoundingClientRect();
 
-        const anchorTop = this.options.avoid?.top ?? this.pos.y;
-        const spaceBelow = viewportHeight - padding - this.pos.y;
-        const spaceAbove = anchorTop - gap - padding;
-        const placeBelow = rect.height <= spaceBelow || spaceBelow >= spaceAbove;
+        const placement = placeMenu({
+            anchorX: this.pos.x,
+            anchorY: this.pos.y,
+            avoidTop: this.options.avoid?.top ?? this.pos.y,
+            menuWidth: rect.width,
+            menuHeight: rect.height,
+            viewportWidth: this.ownerWindow.innerWidth,
+            viewportHeight: this.ownerWindow.innerHeight,
+        });
 
-        // Deliberately short. The menu is meant to sit beside the line being
-        // typed, not stand in for the page — the query narrows it in a couple
-        // of keystrokes, and anything past that scrolls. 120px keeps a few
-        // rows visible rather than collapsing to a sliver in a short window.
-        const maxHeight = Math.min(300, Math.max(120, placeBelow ? spaceBelow : spaceAbove));
-        this.rootEl.style.maxHeight = `${maxHeight}px`;
-
-        const height = Math.min(rect.height, maxHeight);
-        const top = placeBelow
-            ? this.pos.y
-            : Math.max(padding, anchorTop - gap - height);
-
-        let left = this.pos.x;
-        if (left + rect.width > this.ownerWindow.innerWidth - padding) {
-            left = Math.max(padding, this.ownerWindow.innerWidth - rect.width - padding);
-        }
-
-        this.rootEl.style.left = `${left}px`;
-        this.rootEl.style.top = `${top}px`;
+        this.rootEl.style.maxHeight = `${placement.maxHeight}px`;
+        this.rootEl.style.left = `${placement.left}px`;
+        this.rootEl.style.top = `${placement.top}px`;
         this.positionFloatingSubmenu();
     }
 
@@ -556,16 +542,18 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         if (!this.rootEl || !this.submenuEl) return;
         const rootRect = this.rootEl.getBoundingClientRect();
         const submenuRect = this.submenuEl.getBoundingClientRect();
-        const padding = 8;
-        let left = rootRect.right + 8;
-        let top = rootRect.top;
-        if (left + submenuRect.width > this.ownerWindow.innerWidth - padding) {
-            left = Math.max(padding, rootRect.left - submenuRect.width - 8);
-        }
-        if (top + submenuRect.height > this.ownerWindow.innerHeight - padding) {
-            top = Math.max(padding, this.ownerWindow.innerHeight - submenuRect.height - padding);
-        }
-        this.submenuEl.style.left = `${left}px`;
-        this.submenuEl.style.top = `${top}px`;
+
+        const placement = placeSubmenu({
+            parentLeft: rootRect.left,
+            parentRight: rootRect.right,
+            parentTop: rootRect.top,
+            menuWidth: submenuRect.width,
+            menuHeight: submenuRect.height,
+            viewportWidth: this.ownerWindow.innerWidth,
+            viewportHeight: this.ownerWindow.innerHeight,
+        });
+
+        this.submenuEl.style.left = `${placement.left}px`;
+        this.submenuEl.style.top = `${placement.top}px`;
     }
 }

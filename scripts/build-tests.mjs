@@ -22,6 +22,7 @@ await esbuild.build({
 		"src/slashTrigger.ts",
 		"src/attachmentLink.ts",
 		"src/codeFence.ts",
+		"src/menuPosition.ts",
 	],
 	outdir: "test/.build",
 	format: "esm",
