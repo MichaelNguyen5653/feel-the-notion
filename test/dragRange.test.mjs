@@ -1,17 +1,27 @@
 /**
  * Tests for what a drag picks up, and at what indent it lands.
  *
- * Covers four reported problems:
+ * Covers the reported problems:
  *   1. grabbing any line must take the whole block, children included
  *   2. a selection's blank edges must not travel with it
  *   3. dropping into an indented context must adopt that indent
  *   4. blank lines must never be swallowed by the block above
+ *   5. drop depth is chosen during the drag, but only where indenting is legal
  */
 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EditorState, EditorSelection } from "@codemirror/state";
-import { resolveDragRange, reindentBlock, indentWidth, isBlockStart } from "./.build/dragRange.js";
+import {
+	resolveDragRange,
+	reindentBlock,
+	indentWidth,
+	isBlockStart,
+	allowedIndents,
+	pickIndent,
+	detectIndentUnit,
+	isListItem,
+} from "./.build/dragRange.js";
 
 const DOC = [
 	"para one line A", // 1
@@ -178,4 +188,75 @@ test("re-indent with no delta returns the text unchanged", () => {
 test("re-indent is reversible", () => {
 	const block = ["- parent", "  - child"].join("\n");
 	assert.equal(reindentBlock(reindentBlock(block, 0, 4), 4, 0), block);
+});
+
+// ── drop-indent selection ──────────────────────────────────────────────────
+
+const listDoc = (lines) => EditorState.create({ doc: lines.join("\n") }).doc;
+
+test("flat prose offers no indent choice", () => {
+	// The stated requirement: no indent in context means no indent selection.
+	const d = listDoc(["plain one", "plain two", "plain three"]);
+	assert.deepEqual(allowedIndents(d, 2, 4), [0]);
+	assert.deepEqual(allowedIndents(d, 3, 4), [0]);
+});
+
+test("dropping at the very top offers no choice", () => {
+	const d = listDoc(["first", "second"]);
+	assert.deepEqual(allowedIndents(d, 1, 4), [0], "nothing above to indent under");
+});
+
+test("a top-level list item allows one level deeper", () => {
+	const d = listDoc(["- item", "next"]);
+	assert.deepEqual(allowedIndents(d, 2, 4), [0, 4]);
+});
+
+test("a nested item allows every level up to one deeper", () => {
+	const d = listDoc(["- parent", "    - child", "next"]);
+	assert.deepEqual(allowedIndents(d, 3, 4), [0, 4, 8]);
+});
+
+test("markdown's one-level rule is respected", () => {
+	// Nesting more than one level past the line above is silently flattened by
+	// the renderer, so it is never offered.
+	const d = listDoc(["- parent", "next"]);
+	const levels = allowedIndents(d, 2, 4);
+	assert.equal(Math.max(...levels), 4, "must not offer two levels deeper");
+});
+
+test("blank lines are skipped when looking for context", () => {
+	const d = listDoc(["    - deep item", "", "", "next"]);
+	assert.deepEqual(allowedIndents(d, 4, 4), [0, 4, 8], "context is the deep item");
+});
+
+test("indented prose still offers its own depth", () => {
+	const d = listDoc(["- item", "    continuation prose", "next"]);
+	const levels = allowedIndents(d, 3, 4);
+	assert.ok(levels.includes(4), "should offer the prose's own indent");
+	assert.equal(Math.max(...levels), 4, "prose is not a list, so no deeper level");
+});
+
+test("pickIndent snaps to the nearest legal level", () => {
+	assert.equal(pickIndent([0, 4, 8], 5), 4);
+	assert.equal(pickIndent([0, 4, 8], 7), 8);
+	assert.equal(pickIndent([0, 4, 8], 100), 8, "clamps to the deepest");
+	assert.equal(pickIndent([0, 4, 8], -3), 0, "clamps to the shallowest");
+	assert.equal(pickIndent([0], 99), 0, "single option always wins");
+});
+
+test("indent unit is detected from the document", () => {
+	assert.equal(detectIndentUnit(listDoc(["- a", "  - b"])), 2);
+	assert.equal(detectIndentUnit(listDoc(["- a", "    - b"])), 4);
+	assert.equal(detectIndentUnit(listDoc(["- a", "\t- b"])), 4, "a tab reads as 4 columns");
+});
+
+test("indent unit falls back when the document has none", () => {
+	assert.equal(detectIndentUnit(listDoc(["flat", "also flat"]), 4), 4);
+});
+
+test("isListItem distinguishes items from prose", () => {
+	assert.equal(isListItem("- a"), true);
+	assert.equal(isListItem("  1. a"), true);
+	assert.equal(isListItem("# heading"), false);
+	assert.equal(isListItem("plain"), false);
 });

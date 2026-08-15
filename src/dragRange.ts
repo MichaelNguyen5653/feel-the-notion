@@ -170,6 +170,76 @@ export function resolveDragRange(
 	return toRange(doc, lineNo, lineNo);
 }
 
+/** A list item or task, as opposed to prose or a heading. */
+export function isListItem(text: string): boolean {
+	return /^[ \t]*([-*+]|\d+[.)])[ \t]/.test(text);
+}
+
+/**
+ * Infers how many columns one indent level is worth in this document.
+ *
+ * Vaults differ — two spaces, four, or a tab — and guessing wrong makes the
+ * drop indent land between levels, which is exactly what desynchronises
+ * Bullet Depth Markers. The smallest indent actually in use is the safest
+ * read; four is the fallback when the document has no indentation to learn
+ * from.
+ */
+export function detectIndentUnit(doc: Text, fallback = 4): number {
+	let smallest = Infinity;
+	const limit = Math.min(doc.lines, 500); // enough to infer, cheap to scan
+
+	for (let n = 1; n <= limit; n++) {
+		const width = indentWidth(doc.line(n).text);
+		if (width > 0 && width < smallest) smallest = width;
+	}
+
+	return smallest === Infinity ? fallback : smallest;
+}
+
+/**
+ * The indent levels a block may legally be dropped at, before `dropLineNo`.
+ *
+ * Markdown will not let an item be more than one level deeper than the item
+ * above it — nest further and the renderer silently flattens it — so the
+ * deepest offer is one level past the preceding line.
+ *
+ * Returns a single option when there is nothing to indent under. Prose at
+ * column zero offers no choice at all, which is what keeps the drag behaving
+ * exactly as before in a document with no lists in it.
+ */
+export function allowedIndents(doc: Text, dropLineNo: number, unit: number): number[] {
+	let prev: string | null = null;
+	for (let n = Math.min(dropLineNo - 1, doc.lines); n >= 1; n--) {
+		const text = doc.line(n).text;
+		if (!isBlank(text)) {
+			prev = text;
+			break;
+		}
+	}
+
+	if (prev === null) return [0];
+
+	const prevIndent = indentWidth(prev);
+
+	// Flat prose: no indented context exists, so offer no indent choice.
+	if (!isListItem(prev) && prevIndent === 0) return [0];
+
+	const deepest = prevIndent + (isListItem(prev) ? unit : 0);
+
+	const levels: number[] = [];
+	for (let i = 0; i <= deepest; i += unit) levels.push(i);
+	return levels.length > 0 ? levels : [0];
+}
+
+/** Snaps a freely-chosen indent to the nearest legal one. */
+export function pickIndent(allowed: number[], desired: number): number {
+	return allowed.reduce(
+		(best, candidate) =>
+			Math.abs(candidate - desired) < Math.abs(best - desired) ? candidate : best,
+		allowed[0]
+	);
+}
+
 /**
  * Re-indents a block so it adopts a new depth, keeping its internal shape.
  *

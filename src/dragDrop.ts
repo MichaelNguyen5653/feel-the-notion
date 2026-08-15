@@ -1,7 +1,13 @@
 import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
-import { resolveDragRange, reindentBlock, indentWidth } from "./dragRange";
+import {
+    resolveDragRange,
+    reindentBlock,
+    allowedIndents,
+    pickIndent,
+    detectIndentUnit,
+} from "./dragRange";
 
 export class DragManager {
     private ghostEl: HTMLElement | null = null;
@@ -9,6 +15,11 @@ export class DragManager {
     private isDragging = false;
     private startBlock: { from: number, to: number, text: string, indent: number } | null = null;
     private currentTargetLine: number | null = null;
+    /** Indent the block will adopt on drop, chosen by horizontal drag position. */
+    private currentTargetIndent = 0;
+    /** Indent levels legal at the current drop point. One entry = no choice. */
+    private currentAllowedIndents: number[] = [0];
+    private indentUnit = 4;
     private ownerDocument: Document;
     private ownerWindow: Window;
     private onDragEnd?: () => void;
@@ -43,6 +54,7 @@ export class DragManager {
         const text = doc.sliceString(fromPos, toPos);
 
         this.startBlock = { from: fromPos, to: toPos, text: text, indent: range.indent };
+        this.indentUnit = detectIndentUnit(doc);
 
         // Create ghost element
         this.ghostEl = this.ownerDocument.body.createDiv({
@@ -71,7 +83,7 @@ export class DragManager {
         const pos = this.view.posAtCoords({ x: event.clientX, y: event.clientY });
         if (pos !== null) {
             const line = this.view.state.doc.lineAt(pos);
-            this.updateIndicator(line.number, event.clientY);
+            this.updateIndicator(line.number, event.clientY, event.clientX);
         }
     };
 
@@ -108,27 +120,6 @@ export class DragManager {
         this.onDragEnd?.();
     }
 
-    /**
-     * The indent a block should take when dropped before `toLineNo`.
-     *
-     * Uses the target line when it has content, since that is the block the
-     * user is aiming beside. When dropping onto or past a blank line, the
-     * nearest non-blank line above supplies the depth instead — a blank line
-     * has no indent of its own, and taking zero from it would silently
-     * outdent the block being moved.
-     */
-    private indentAtDrop(doc: EditorView["state"]["doc"], toLineNo: number): number {
-        if (toLineNo >= 1 && toLineNo <= doc.lines) {
-            const target = doc.line(toLineNo).text;
-            if (target.trim() !== "") return indentWidth(target);
-        }
-        for (let n = Math.min(toLineNo - 1, doc.lines); n >= 1; n--) {
-            const text = doc.line(n).text;
-            if (text.trim() !== "") return indentWidth(text);
-        }
-        return 0;
-    }
-
     private updateGhostPosition(x: number, y: number) {
         if (this.ghostEl) {
             this.ghostEl.setCssStyles({
@@ -138,7 +129,7 @@ export class DragManager {
         }
     }
 
-    private updateIndicator(lineNo: number, mouseY: number) {
+    private updateIndicator(lineNo: number, mouseY: number, mouseX: number) {
         if (!this.indicatorEl) return;
 
         try {
@@ -166,10 +157,28 @@ export class DragManager {
 
                 this.currentTargetLine = targetLine;
 
+                // Horizontal drag position chooses the drop depth, snapped to
+                // the levels that are actually legal here. Where only one is
+                // legal there is nothing to choose and the indicator sits flush,
+                // which is the behaviour in a document with no lists.
+                const contentRect = this.view.contentDOM.getBoundingClientRect();
+                const columnPx = this.view.defaultCharacterWidth || 8;
+                this.currentAllowedIndents = allowedIndents(
+                    this.view.state.doc,
+                    targetLine,
+                    this.indentUnit
+                );
+                const desired = Math.max(0, Math.round((mouseX - contentRect.left) / columnPx));
+                this.currentTargetIndent = pickIndent(this.currentAllowedIndents, desired);
+
+                const offsetPx = this.currentTargetIndent * columnPx;
+                const hasChoice = this.currentAllowedIndents.length > 1;
+                this.indicatorEl.toggleClass("is-indent-selectable", hasChoice);
+
                 this.indicatorEl.setCssStyles({
                     top: `${top}px`,
-                    left: `${coords.left}px`,
-                    width: `${this.view.contentDOM.clientWidth}px`,
+                    left: `${coords.left + offsetPx}px`,
+                    width: `${Math.max(40, this.view.contentDOM.clientWidth - offsetPx)}px`,
                     display: "block"
                 });
             }
@@ -185,7 +194,7 @@ export class DragManager {
         // dropped beside an indented one kept its original depth, breaking the
         // nesting and desynchronising the bullet characters that Bullet Depth
         // Markers keeps tied to depth.
-        const targetIndent = this.indentAtDrop(doc, toLineNo);
+        const targetIndent = this.currentTargetIndent;
         const textToMove = reindentBlock(startBlock.text, startBlock.indent, targetIndent);
 
         // Handle insertion at the end of the document
