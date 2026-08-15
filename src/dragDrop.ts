@@ -3,7 +3,6 @@ import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 import {
     resolveDragRange,
-    reindentBlock,
     allowedIndents,
     pickIndent,
     detectIndentUnit,

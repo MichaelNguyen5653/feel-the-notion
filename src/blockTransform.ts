@@ -8,6 +8,21 @@ import { toMarkdownLink } from "./attachmentLink";
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
 
+/**
+ * The slice of moment's API this file uses.
+ *
+ * Obsidian re-exports moment without types the linter can follow, so every
+ * call read as `any` and the format strings went unchecked. Naming the three
+ * methods used here restores that without pulling in a types package.
+ */
+interface MomentLike {
+    format(pattern: string): string;
+    add(amount: number, unit: string): MomentLike;
+    subtract(amount: number, unit: string): MomentLike;
+}
+
+const now = (): MomentLike => moment() as unknown as MomentLike;
+
 /** Text to delete as part of an insert — the `/query` that opened the menu. */
 export interface RemoveRange {
     from: number;
@@ -144,7 +159,9 @@ function sanitizeAttachmentName(name: string): string {
     // can resolve to "." or "..".
     const cleaned = name
         .replace(/[\\/:*?"<>|]/g, "-")
-        // eslint-disable-next-line no-control-regex
+        // eslint-disable-next-line no-control-regex -- matching control
+        // characters is the entire point here: they are what has to come out
+        // of a name that is about to become a file path.
         .replace(/[\u0000-\u001f\u007f]/g, "-")
         .replace(/^\.+/, "")
         .trim();
@@ -244,10 +261,10 @@ export function insertBlock(
             case "embed": insertText = "![[]]"; cursorOffset = 3; break;
             case "tag": insertText = "#"; cursorOffset = 1; break;
             case "comment": insertText = "%%  %%"; cursorOffset = 3; break;
-            case "today": insertText = moment().format(settings.dateFormat); break;
-            case "yesterday": insertText = moment().subtract(1, 'days').format(settings.dateFormat); break;
-            case "tomorrow": insertText = moment().add(1, 'days').format(settings.dateFormat); break;
-            case "time": insertText = moment().format(settings.timeFormat); break;
+            case "today": insertText = now().format(settings.dateFormat); break;
+            case "yesterday": insertText = now().subtract(1, 'days').format(settings.dateFormat); break;
+            case "tomorrow": insertText = now().add(1, 'days').format(settings.dateFormat); break;
+            case "time": insertText = now().format(settings.timeFormat); break;
             case "table": {
                 const col1 = `${t("table.column")} 1`;
                 const col2 = `${t("table.column")} 2`;

@@ -91,7 +91,6 @@ export class BlockPluginSettingTab extends PluginSettingTab {
             .addSlider(slider => slider
                 .setLimits(0, 500, 50)
                 .setValue(this.plugin.settings.hoverDelay)
-                .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.hoverDelay = value;
                     await this.plugin.saveSettings();
@@ -103,7 +102,6 @@ export class BlockPluginSettingTab extends PluginSettingTab {
             .addSlider(slider => slider
                 .setLimits(0, 1000, 50)
                 .setValue(this.plugin.settings.hideDelay)
-                .setDynamicTooltip()
                 .onChange(async (value) => {
                     this.plugin.settings.hideDelay = value;
                     await this.plugin.saveSettings();

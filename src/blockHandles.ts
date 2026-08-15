@@ -175,7 +175,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // Calculate left position based on contentDOM offset
             const left = view.contentDOM.offsetLeft - 52; 
             
-            this.handleEl.style.transform = `translate3d(${left}px, ${Math.round(top)}px, 0)`;
+            this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });
         } catch {
             this.hideHandle();
         }

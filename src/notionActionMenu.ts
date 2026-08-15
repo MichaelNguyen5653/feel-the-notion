@@ -172,8 +172,7 @@ class NotionBlockActionMenu {
         this.rootEl = this.ownerDocument.body.createDiv({ cls: "wk-nb-action-menu" });
         this.rootEl.setAttribute("role", "menu");
         this.rootEl.tabIndex = -1;
-        this.rootEl.style.left = `${this.pos.x}px`;
-        this.rootEl.style.top = `${this.pos.y}px`;
+        this.rootEl.setCssStyles({ left: `${this.pos.x}px`, top: `${this.pos.y}px` });
 
         this.listEl = this.rootEl.createDiv({ cls: "wk-nb-action-menu-list" });
         this.renderList();
@@ -502,7 +501,7 @@ class NotionBlockActionMenu {
 
         // Measured at natural height first: which side the menu goes on depends
         // on how tall it wants to be, not on the cap left over from last time.
-        this.rootEl.style.maxHeight = "";
+        this.rootEl.setCssStyles({ maxHeight: "" });
         const rect = this.rootEl.getBoundingClientRect();
 
         const placement = placeMenu({
@@ -515,9 +514,11 @@ class NotionBlockActionMenu {
             viewportHeight: this.ownerWindow.innerHeight,
         });
 
-        this.rootEl.style.maxHeight = `${placement.maxHeight}px`;
-        this.rootEl.style.left = `${placement.left}px`;
-        this.rootEl.style.top = `${placement.top}px`;
+        this.rootEl.setCssStyles({
+            maxHeight: `${placement.maxHeight}px`,
+            left: `${placement.left}px`,
+            top: `${placement.top}px`,
+        });
         this.positionFloatingSubmenu();
     }
 
@@ -536,7 +537,6 @@ class NotionBlockActionMenu {
             viewportHeight: this.ownerWindow.innerHeight,
         });
 
-        this.submenuEl.style.left = `${placement.left}px`;
-        this.submenuEl.style.top = `${placement.top}px`;
+        this.submenuEl.setCssStyles({ left: `${placement.left}px`, top: `${placement.top}px` });
     }
 }
