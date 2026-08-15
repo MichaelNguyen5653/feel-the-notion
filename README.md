@@ -1,6 +1,6 @@
 # Feel the Notion
 
-> Recommended plugin to enhance experience: [Bullet depth markers](https://github.com/gsarig/obsidian-bullet-depth-markers)
+> Recommended plugin to enhance experience: [Bullet depth markers](https://community.obsidian.md/plugins/bullet-depth-markers)
 
 Notion-like block editing for Obsidian's Live Preview.
 
