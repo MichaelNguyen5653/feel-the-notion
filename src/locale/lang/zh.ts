@@ -29,9 +29,12 @@ const zh: LocaleType = {
     "menu.callout": "Callout",
 
     "menu.paragraph": "文本",
+    "menu.headings": "标题",
     "menu.h1": "标题 1",
     "menu.h2": "标题 2",
     "menu.h3": "标题 3",
+    "menu.h4": "标题 4",
+    "menu.h5": "标题 5",
     "menu.todo": "待办列表",
     "menu.bullet": "无序列表",
     "menu.numbered": "有序列表",
@@ -46,6 +49,7 @@ const zh: LocaleType = {
     "menu.link": "内部链接",
     "menu.extLink": "外部链接",
     "menu.image": "插入图片",
+    "menu.attachment": "插入附件",
     "menu.table": "表格",
     "menu.today": "今天",
     "menu.time": "当前时间",
@@ -103,6 +107,8 @@ const zh: LocaleType = {
     "notice.linkCopyFailed": "复制区块链接失败",
     "notice.selectImage": "请选择图片文件。",
     "notice.insertImageFailed": "插入图片失败。",
+    "notice.insertAttachmentFailed": "插入附件失败。",
+    "command.openInsertMenu": "打开块插入菜单",
     "table.column": "列"
 };
 

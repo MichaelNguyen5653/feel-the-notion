@@ -79,7 +79,15 @@ export function planBlockMove(
  */
 export function applyChanges(docText: string, changes: MoveChange[]): string {
 	// Apply from the end backwards so earlier offsets stay valid.
-	const ordered = [...changes].sort((a, b) => b.from - a.from);
+	//
+	// Ties are applied in reverse listed order, which is what makes two inserts
+	// at the same offset land in the order they were written — CodeMirror's own
+	// rule, and one that matters when a block insert and its footnote
+	// definition both land at the end of the document.
+	const ordered = changes
+		.map((change, index) => ({ change, index }))
+		.sort((a, b) => b.change.from - a.change.from || b.index - a.index)
+		.map((entry) => entry.change);
 	let out = docText;
 	for (const change of ordered) {
 		const to = change.to ?? change.from;

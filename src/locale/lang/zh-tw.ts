@@ -29,9 +29,12 @@ const zhTw: LocaleType = {
     "menu.callout": "Callout",
 
     "menu.paragraph": "文字",
+    "menu.headings": "標題",
     "menu.h1": "標題 1",
     "menu.h2": "標題 2",
     "menu.h3": "標題 3",
+    "menu.h4": "標題 4",
+    "menu.h5": "標題 5",
     "menu.todo": "待辦清單",
     "menu.bullet": "無序清單",
     "menu.numbered": "有序清單",
@@ -46,6 +49,7 @@ const zhTw: LocaleType = {
     "menu.link": "內部連結",
     "menu.extLink": "外部連結",
     "menu.image": "插入圖片",
+    "menu.attachment": "插入附件",
     "menu.table": "表格",
     "menu.today": "今天",
     "menu.time": "當前時間",
@@ -103,6 +107,8 @@ const zhTw: LocaleType = {
     "notice.linkCopyFailed": "複製區塊連結失敗",
     "notice.selectImage": "請選擇圖片檔案。",
     "notice.insertImageFailed": "插入圖片失敗。",
+    "notice.insertAttachmentFailed": "插入附件失敗。",
+    "command.openInsertMenu": "開啟區塊插入選單",
     "table.column": "欄"
 };
 

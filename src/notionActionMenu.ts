@@ -193,9 +193,13 @@ class NotionBlockActionMenu {
     private getTurnIntoItems(): ActionItem[] {
         return [
             { id: "paragraph", label: t("menu.paragraph"), icon: "text", action: () => this.runTransform("paragraph") },
-            { id: "h1", label: t("menu.h1"), icon: "heading1", action: () => this.runTransform("h1") },
-            { id: "h2", label: t("menu.h2"), icon: "heading2", action: () => this.runTransform("h2") },
-            { id: "h3", label: t("menu.h3"), icon: "heading3", action: () => this.runTransform("h3") },
+            // Lucide names are kebab-case; "heading1" resolved to nothing and
+            // these rows rendered with a blank icon slot.
+            { id: "h1", label: t("menu.h1"), icon: "heading-1", action: () => this.runTransform("h1") },
+            { id: "h2", label: t("menu.h2"), icon: "heading-2", action: () => this.runTransform("h2") },
+            { id: "h3", label: t("menu.h3"), icon: "heading-3", action: () => this.runTransform("h3") },
+            { id: "h4", label: t("menu.h4"), icon: "heading-4", action: () => this.runTransform("h4") },
+            { id: "h5", label: t("menu.h5"), icon: "heading-5", action: () => this.runTransform("h5") },
             { id: "todo", label: t("menu.todo"), icon: "check-square", action: () => this.runTransform("todo") },
             { id: "bullet", label: t("menu.bullet"), icon: "list", action: () => this.runTransform("bullet") },
             { id: "numbered", label: t("menu.numbered"), icon: "list-ordered", action: () => this.runTransform("numbered") },

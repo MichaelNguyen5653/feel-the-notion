@@ -13,6 +13,16 @@ export interface BlockPluginSettings {
     hideSyntaxMarkers: boolean;
     /** Expand a multi-block drag selection to whole blocks, as Notion does. */
     snapSelectionToBlocks: boolean;
+    /** Cmd+A escalation and Backspace-at-block-start. */
+    blockKeys: boolean;
+    /** Show the "+" button on the hover handle. */
+    plusHandle: boolean;
+    /** Open the insert menu by typing a trigger character on an empty block. */
+    slashMenu: boolean;
+    /** The character that opens it. */
+    slashTrigger: string;
+    /** Write inserted attachments as embeds (a leading "!") rather than links. */
+    embedAttachments: boolean;
 }
 
 export const DEFAULT_SETTINGS: BlockPluginSettings = {
@@ -31,6 +41,13 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // OFF by default: it changes what Backspace and typing replace, so it is
     // behaviour rather than appearance. The blue overlay is on regardless.
     snapSelectionToBlocks: false,
+    blockKeys: true,
+    plusHandle: true,
+    slashMenu: true,
+    slashTrigger: '/',
+    // OFF by default, as asked: an attachment reads as a link unless it is
+    // explicitly meant to render inline.
+    embedAttachments: false,
 };
 
 export class BlockPluginSettingTab extends PluginSettingTab {
@@ -139,6 +156,71 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.snapSelectionToBlocks)
                 .onChange(async (value) => {
                     this.plugin.settings.snapSelectionToBlocks = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Block-aware Cmd+A and Backspace')
+            .setDesc(
+                'Cmd+A selects the block you are in, and again selects the note. '
+                + 'Backspace at the start of a block steps out one indent level, then drops the '
+                + 'list marker or heading, then merges into the block above.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.blockKeys)
+                .onChange(async (value) => {
+                    this.plugin.settings.blockKeys = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl).setName('Insert menu').setHeading();
+
+        new Setting(containerEl)
+            .setName('Show the "+" handle')
+            .setDesc('The button beside the drag handle that opens the insert menu.')
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.plusHandle)
+                .onChange(async (value) => {
+                    this.plugin.settings.plusHandle = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Open the insert menu by typing')
+            .setDesc(
+                'Type the trigger character on an otherwise empty block to open the same menu '
+                + 'the "+" handle opens, then keep typing to filter it. '
+                + 'It deliberately does not trigger mid-sentence, so a "/" in ordinary prose is left alone.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.slashMenu)
+                .onChange(async (value) => {
+                    this.plugin.settings.slashMenu = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Trigger character')
+            .setDesc('A single character. For a key combination instead, bind "Open block insert menu" under Hotkeys.')
+            .addText(text => text
+                .setPlaceholder('/')
+                .setValue(this.plugin.settings.slashTrigger)
+                .onChange(async (value) => {
+                    this.plugin.settings.slashTrigger = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Embed inserted attachments')
+            .setDesc(
+                'Off: an attachment is inserted as a link, [name](path). '
+                + 'On: it gets a leading "!" so Obsidian renders it inline. '
+                + 'Either way the file is saved wherever Files & Links says attachments go.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.embedAttachments)
+                .onChange(async (value) => {
+                    this.plugin.settings.embedAttachments = value;
                     await this.plugin.saveSettings();
                 }));
     }

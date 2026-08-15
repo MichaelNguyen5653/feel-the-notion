@@ -142,9 +142,14 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     updatePosition(view: EditorView) {
         if (this.hoveredLine === null || !this.handleEl) return;
 
+        // Re-read on every reposition rather than at construction: the plugin
+        // instance outlives a settings change, so a toggle applied once at
+        // startup would not take effect until the editor was rebuilt.
+        this.addButton?.toggle(plugin.settings.plusHandle);
+
         try {
             const line = view.state.doc.line(this.hoveredLine);
-            
+
             // Get accurate screen coordinates of the line
             const coords = view.coordsAtPos(line.from);
             if (!coords) return;

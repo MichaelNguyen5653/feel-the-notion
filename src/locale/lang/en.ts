@@ -26,10 +26,13 @@ const en = {
     "menu.backgroundColor": "Background color",
     "menu.callout": "Callout",
 
+    "menu.headings": "Headings",
     "menu.paragraph": "Text",
     "menu.h1": "Heading 1",
     "menu.h2": "Heading 2",
     "menu.h3": "Heading 3",
+    "menu.h4": "Heading 4",
+    "menu.h5": "Heading 5",
     "menu.todo": "To-do list",
     "menu.bullet": "Bulleted list",
     "menu.numbered": "Numbered list",
@@ -44,6 +47,7 @@ const en = {
     "menu.link": "Internal link",
     "menu.extLink": "External link",
     "menu.image": "Insert image",
+    "menu.attachment": "Insert attachment",
     "menu.table": "Table",
     "menu.today": "Today",
     "menu.time": "Current time",
@@ -101,6 +105,8 @@ const en = {
     "notice.linkCopyFailed": "Failed to copy block link",
     "notice.selectImage": "Please select an image file.",
     "notice.insertImageFailed": "Failed to insert image.",
+    "notice.insertAttachmentFailed": "Failed to insert attachment.",
+    "command.openInsertMenu": "Open block insert menu",
     "table.column": "Column"
 };
 

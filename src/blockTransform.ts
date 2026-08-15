@@ -1,11 +1,18 @@
 import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import { moment, Notice } from "obsidian";
-import type { TFile } from "obsidian";
 import NotionBlock from "./main";
 import { t } from "./locale/helpers";
+import { InsertChange, planInsert } from "./insertPlan";
+import { toMarkdownLink } from "./attachmentLink";
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
+
+/** Text to delete as part of an insert — the `/query` that opened the menu. */
+export interface RemoveRange {
+    from: number;
+    to: number;
+}
 
 export function detectBlockType(lineText: string): string {
     if (/^#{1,6} /.test(lineText)) return "heading";
@@ -30,7 +37,13 @@ export function stripPrefix(lineText: string): string {
         .trim();
 }
 
-export async function insertImageFiles(plugin: NotionBlock, view: EditorView, lineNo: number, files: File[]): Promise<void> {
+export async function insertImageFiles(
+    plugin: NotionBlock,
+    view: EditorView,
+    lineNo: number,
+    files: File[],
+    remove?: RemoveRange
+): Promise<void> {
     const imageFiles = files.filter(isImageFile);
     if (imageFiles.length === 0) {
         new Notice(t("notice.selectImage"));
@@ -38,34 +51,81 @@ export async function insertImageFiles(plugin: NotionBlock, view: EditorView, li
     }
 
     try {
-        const sourcePath = plugin.app.workspace.getActiveFile()?.path ?? "";
-        const links: string[] = [];
-
-        for (const file of imageFiles) {
-            const safeName = sanitizeAttachmentName(file.name);
-            const targetPath = await plugin.app.fileManager.getAvailablePathForAttachment(safeName, sourcePath);
-            const savedFile = await plugin.app.vault.createBinary(targetPath, await file.arrayBuffer());
-            links.push(toEmbedLink(plugin, savedFile, sourcePath));
-        }
-
-        insertTextAtLineEnd(view, lineNo, links.join("\n"), true);
+        const links = await saveAttachments(plugin, imageFiles, (link) => `!${link}`);
+        insertTextAtLineEnd(view, lineNo, links.join("\n"), true, remove);
     } catch {
         new Notice(t("notice.insertImageFailed"));
     }
 }
 
-function insertTextAtLineEnd(view: EditorView, lineNo: number, insertText: string, insertAsBlock: boolean): void {
+/**
+ * Saves arbitrary files into the vault's attachment folder and links them.
+ *
+ * Files of any type, unlike insertImageFiles — this is the "insert attachment"
+ * entry. The destination comes from getAvailablePathForAttachment, so it
+ * follows whatever the core Files & Links setting says rather than second-
+ * guessing it. The link is a markdown link, embedded only when the setting
+ * asks for it.
+ */
+export async function insertAttachmentFiles(
+    plugin: NotionBlock,
+    view: EditorView,
+    lineNo: number,
+    files: File[],
+    remove?: RemoveRange
+): Promise<void> {
+    if (files.length === 0) return;
+
+    try {
+        const embed = plugin.settings.embedAttachments;
+        const links = await saveAttachments(plugin, files, (link, path) =>
+            toMarkdownLink(link, path, embed)
+        );
+        insertTextAtLineEnd(view, lineNo, links.join("\n"), true, remove);
+    } catch {
+        new Notice(t("notice.insertAttachmentFailed"));
+    }
+}
+
+async function saveAttachments(
+    plugin: NotionBlock,
+    files: File[],
+    format: (generatedLink: string, path: string) => string
+): Promise<string[]> {
+    const sourcePath = plugin.app.workspace.getActiveFile()?.path ?? "";
+    const links: string[] = [];
+
+    for (const file of files) {
+        const safeName = sanitizeAttachmentName(file.name);
+        const targetPath = await plugin.app.fileManager.getAvailablePathForAttachment(safeName, sourcePath);
+        const savedFile = await plugin.app.vault.createBinary(targetPath, await file.arrayBuffer());
+        const generated = plugin.app.fileManager.generateMarkdownLink(savedFile, sourcePath);
+        links.push(format(generated, savedFile.path));
+    }
+
+    return links;
+}
+
+function insertTextAtLineEnd(
+    view: EditorView,
+    lineNo: number,
+    insertText: string,
+    insertAsBlock: boolean,
+    remove?: RemoveRange
+): void {
     const line = view.state.doc.line(lineNo);
-    const needsNewLine = insertAsBlock && line.text.trim().length > 0;
-    const prefix = needsNewLine ? "\n" : "";
-    const pos = line.to;
+    const plan = planInsert({
+        lineFrom: line.from,
+        lineTo: line.to,
+        lineText: line.text,
+        insertText,
+        asBlock: insertAsBlock,
+        remove,
+    });
 
     dispatchBlockEdit(view, {
-        changes: {
-            from: pos,
-            insert: prefix + insertText
-        },
-        selection: { anchor: pos + prefix.length + insertText.length },
+        changes: plan.changes,
+        selection: { anchor: plan.anchor },
         scrollIntoView: true,
         userEvent: "insert.block"
     });
@@ -86,10 +146,6 @@ function getFileExtension(name: string): string {
     return name.slice(index + 1).toLowerCase();
 }
 
-function toEmbedLink(plugin: NotionBlock, file: TFile, sourcePath: string): string {
-    return `!${plugin.app.fileManager.generateMarkdownLink(file, sourcePath)}`;
-}
-
 export function transformLine(view: EditorView, lineNo: number, targetType: string) {
     const line = view.state.doc.line(lineNo);
     const lineText = line.text;
@@ -105,6 +161,8 @@ export function transformLine(view: EditorView, lineNo: number, targetType: stri
             case "h1": newText = "# " + content; break;
             case "h2": newText = "## " + content; break;
             case "h3": newText = "### " + content; break;
+            case "h4": newText = "#### " + content; break;
+            case "h5": newText = "##### " + content; break;
             case "bullet": 
             case "toggle": newText = "- " + content; break;
             case "numbered": newText = "1. " + content; break;
@@ -128,10 +186,16 @@ export function transformLine(view: EditorView, lineNo: number, targetType: stri
     });
 }
 
-export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: number, targetType: string) {
+export function insertBlock(
+    plugin: NotionBlock,
+    view: EditorView,
+    lineNo: number,
+    targetType: string,
+    remove?: RemoveRange
+) {
     const line = view.state.doc.line(lineNo);
     const settings = plugin.settings;
-    
+
     let insertText = "";
     let cursorOffset = 0;
     let isMetadata = false;
@@ -140,7 +204,7 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
     // (currently only the footnote definition appended at the end of the
     // document). Merged into the single dispatch below so the whole insert
     // stays one undo step.
-    const extraChanges: { from: number; to?: number; insert: string }[] = [];
+    const extraChanges: InsertChange[] = [];
 
     if (targetType.startsWith("callout-")) {
         const type = targetType.replace("callout-", "");
@@ -151,6 +215,8 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
             case "h1": insertText = "# "; break;
             case "h2": insertText = "## "; break;
             case "h3": insertText = "### "; break;
+            case "h4": insertText = "#### "; break;
+            case "h5": insertText = "##### "; break;
             case "todo": insertText = "- [ ] "; break;
             case "toggle":
             case "bullet": insertText = "- "; break;
@@ -208,21 +274,23 @@ export function insertBlock(plugin: NotionBlock, view: EditorView, lineNo: numbe
         }
     }
 
-    const pos = customPos !== null ? customPos : line.to;
     const isNewLine = !isMetadata && !["link", "ext-link", "embed", "tag", "comment", "today", "yesterday", "tomorrow", "time"].includes(targetType);
 
-    // Only insert newline if current line is not empty
-    const needsNewLine = isNewLine && line.text.trim().length > 0;
+    const plan = planInsert({
+        lineFrom: line.from,
+        lineTo: line.to,
+        lineText: line.text,
+        insertText,
+        cursorOffset: cursorOffset || insertText.length,
+        asBlock: isNewLine,
+        at: customPos ?? undefined,
+        remove,
+        extra: extraChanges,
+    });
 
     dispatchBlockEdit(view, {
-        changes: [
-            {
-                from: pos,
-                insert: (needsNewLine ? "\n" : "") + insertText
-            },
-            ...extraChanges,
-        ],
-        selection: { anchor: (customPos !== null ? 0 : pos) + (needsNewLine ? 1 : 0) + (cursorOffset || insertText.length) },
+        changes: plan.changes,
+        selection: { anchor: plan.anchor },
         scrollIntoView: true,
         userEvent: "insert.block"
     });
