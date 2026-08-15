@@ -8,12 +8,13 @@ import {
     pickIndent,
     detectIndentUnit,
 } from "./dragRange";
+import { planBlockMove, MoveSource } from "./planMove";
 
 export class DragManager {
     private ghostEl: HTMLElement | null = null;
     private indicatorEl: HTMLElement | null = null;
     private isDragging = false;
-    private startBlock: { from: number, to: number, text: string, indent: number } | null = null;
+    private startBlock: MoveSource | null = null;
     private currentTargetLine: number | null = null;
     /** Indent the block will adopt on drop, chosen by horizontal drag position. */
     private currentTargetIndent = 0;
@@ -53,7 +54,14 @@ export class DragManager {
         const toPos = range.to;
         const text = doc.sliceString(fromPos, toPos);
 
-        this.startBlock = { from: fromPos, to: toPos, text: text, indent: range.indent };
+        this.startBlock = {
+            from: fromPos,
+            to: toPos,
+            text,
+            indent: range.indent,
+            firstLine: range.firstLine,
+            lastLine: range.lastLine,
+        };
         this.indentUnit = detectIndentUnit(doc);
 
         // Create ghost element
@@ -187,54 +195,20 @@ export class DragManager {
         }
     }
 
-    private moveBlock(startBlock: { from: number, to: number, text: string, indent: number }, toLineNo: number) {
-        const doc = this.view.state.doc;
+    private moveBlock(startBlock: MoveSource, toLineNo: number) {
+        const changes = planBlockMove(
+            this.view.state.doc,
+            startBlock,
+            toLineNo,
+            this.currentTargetIndent
+        );
 
-        // Adopt the indent of wherever we are landing. Without this a block
-        // dropped beside an indented one kept its original depth, breaking the
-        // nesting and desynchronising the bullet characters that Bullet Depth
-        // Markers keeps tied to depth.
-        const targetIndent = this.currentTargetIndent;
-        const textToMove = reindentBlock(startBlock.text, startBlock.indent, targetIndent);
+        if (changes.length === 0) return;
 
-        // Handle insertion at the end of the document
-        if (toLineNo > doc.lines) {
-            dispatchBlockEdit(this.view, {
-                changes: [
-                    { from: doc.length, insert: "\n" + textToMove },
-                    { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }
-                ],
-                scrollIntoView: true,
-                userEvent: "move.block"
-            });
-            return;
-        }
-
-        const toLine = doc.line(toLineNo);
-
-        // If dropping inside the same block, do nothing
-        if (toLine.from >= startBlock.from && toLine.to <= startBlock.to) return;
-        
-        if (startBlock.from < toLine.from) {
-            // Moving down
-            dispatchBlockEdit(this.view, {
-                changes: [
-                    { from: toLine.from, insert: textToMove + "\n" }, // Insert before the target line
-                    { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }
-                ],
-                scrollIntoView: true,
-                userEvent: "move.block"
-            });
-        } else {
-            // Moving up
-            dispatchBlockEdit(this.view, {
-                changes: [
-                    { from: toLine.from, insert: textToMove + "\n" },
-                    { from: startBlock.from, to: Math.min(startBlock.to + 1, doc.length) }
-                ],
-                scrollIntoView: true,
-                userEvent: "move.block"
-            });
-        }
+        dispatchBlockEdit(this.view, {
+            changes,
+            scrollIntoView: true,
+            userEvent: "move.block"
+        });
     }
 }

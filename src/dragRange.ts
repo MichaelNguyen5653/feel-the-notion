@@ -90,12 +90,30 @@ function findBlockStart(doc: Text, lineNo: number): number {
 /**
  * Walks down to the last line owned by the block starting at `start`.
  *
- * Includes anything indented deeper — nested list items and their own
- * children — and any non-block-start line at the same indent, which is how a
- * wrapped paragraph stays whole.
+ * Always includes lines indented deeper — nested items and their own children
+ * travel with the parent.
+ *
+ * Lines at the SAME indent are where it gets subtle, and getting it wrong was
+ * a real bug. A structured block (list item, heading, quote) owns only what is
+ * indented under it: a list item's continuation has to reach the content
+ * column, so a line sitting back at the marker's own indent is a separate
+ * block, not part of this one. Absorbing those meant dragging
+ *
+ *     - The shirt is white
+ *     The score is now 1-1
+ *     bob's furniture
+ *
+ * by its first line carried all three away, scattering two paragraphs the user
+ * never touched.
+ *
+ * Plain prose is the opposite: it has no marker, so consecutive same-indent
+ * lines ARE one wrapped paragraph and must stay together.
  */
 function findBlockEnd(doc: Text, start: number): number {
-	const baseIndent = indentWidth(doc.line(start).text);
+	const startText = doc.line(start).text;
+	const baseIndent = indentWidth(startText);
+	// Structured blocks own only what is nested beneath them.
+	const ownsOnlyDeeper = isBlockStart(startText);
 	let end = start;
 
 	while (end < doc.lines) {
@@ -108,8 +126,8 @@ function findBlockEnd(doc: Text, start: number): number {
 			end++;
 			continue;
 		}
-		// Same indent and not opening a new block: a wrapped continuation.
-		if (nextIndent === baseIndent && !isBlockStart(next.text)) {
+		// Same indent: only prose absorbs it, as a wrapped continuation.
+		if (!ownsOnlyDeeper && nextIndent === baseIndent && !isBlockStart(next.text)) {
 			end++;
 			continue;
 		}

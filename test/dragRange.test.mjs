@@ -80,13 +80,16 @@ test("a list item does not absorb the item above it", () => {
 	assert.deepEqual([r.firstLine, r.lastLine], [8, 8]);
 });
 
-test("a heading does not absorb the paragraph below or above", () => {
+test("a heading drags alone, not with the paragraph under it", () => {
+	// Changed deliberately. An earlier version had the heading carry the
+	// paragraph below it as "its content", which was my choice rather than a
+	// requirement — and it shared a root cause with the reported bug where a
+	// list item carried unrelated paragraphs. A structured block now owns only
+	// what is indented beneath it, which is both predictable and what Notion
+	// does: a heading is its own block.
 	const d = doc();
-	assert.deepEqual(
-		[resolveDragRange(d, 10, "paragraph").firstLine, resolveDragRange(d, 10, "paragraph").lastLine],
-		[10, 11],
-		"heading keeps the paragraph that follows it, as its content"
-	);
+	const r = resolveDragRange(d, 10, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [10, 10]);
 });
 
 test("a blank line is a boundary and only ever moves alone", () => {
