@@ -1,6 +1,7 @@
 import { dispatchBlockEdit } from "./history";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
+import { resolveDragRange } from "./dragRange";
 
 export class DragManager {
     private ghostEl: HTMLElement | null = null;
@@ -18,35 +19,26 @@ export class DragManager {
 
     startDrag(lineNo: number, event: MouseEvent) {
         this.isDragging = true;
-        
+
+        const doc = this.view.state.doc;
+
+        // Resolve the range BEFORE clearing the selection below. Dragging from
+        // inside a multi-block selection has to carry every selected block,
+        // and clearing first would throw away the only record of which those
+        // were — the bug this ordering exists to prevent.
+        const range = resolveDragRange(
+            doc,
+            lineNo,
+            this.plugin.settings.dragGranularity,
+            this.view.state.selection
+        );
+
         // Clear any existing selection
         this.ownerWindow.getSelection()?.removeAllRanges();
-        
-        const doc = this.view.state.doc;
-        let fromPos, toPos, text;
 
-        if (this.plugin.settings.dragGranularity === "paragraph") {
-            // Find paragraph boundaries
-            let startLine = lineNo;
-            while (startLine > 1 && doc.line(startLine - 1).text.trim() !== "") {
-                startLine--;
-            }
-            let endLine = lineNo;
-            while (endLine < doc.lines && doc.line(endLine + 1).text.trim() !== "") {
-                endLine++;
-            }
-            
-            const startL = doc.line(startLine);
-            const endL = doc.line(endLine);
-            fromPos = startL.from;
-            toPos = endL.to;
-            text = doc.sliceString(fromPos, toPos);
-        } else {
-            const line = doc.line(lineNo);
-            fromPos = line.from;
-            toPos = line.to;
-            text = line.text;
-        }
+        const fromPos = range.from;
+        const toPos = range.to;
+        const text = doc.sliceString(fromPos, toPos);
 
         this.startBlock = { from: fromPos, to: toPos, text: text };
 

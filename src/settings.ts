@@ -17,7 +17,10 @@ export interface BlockPluginSettings {
 
 export const DEFAULT_SETTINGS: BlockPluginSettings = {
     enabled: true,
-    dragGranularity: 'line',
+    // Notion drags whole blocks, not single lines. A wrapped paragraph is one
+    // block to the reader, so 'line' meant grabbing a paragraph moved a
+    // fragment of it and left the rest behind.
+    dragGranularity: 'paragraph',
     hoverDelay: 0,
     hideDelay: 200,
     dateFormat: 'YYYY-MM-DD',
