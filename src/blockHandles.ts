@@ -124,10 +124,12 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             const rect = this.addButton!.getBoundingClientRect();
             const pos = { x: rect.left, y: rect.bottom };
 
-            // Just show the menu for the current line. 
+            // Just show the menu for the current line.
             // insertBlock will handle creating a new line if the current one isn't empty.
             closeNotionBlockActionMenus();
-            showNotionBlockInsertMenu(plugin, view, this.hoveredLine, pos);
+            showNotionBlockInsertMenu(plugin, view, this.hoveredLine, pos, {
+                avoid: { top: rect.top, bottom: rect.bottom },
+            });
         };
 
     }

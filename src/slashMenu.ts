@@ -83,6 +83,7 @@ export const slashMenuExtension = (plugin: NotionBlock) =>
                         line.number,
                         { x: coords.left, y: coords.bottom + 6 },
                         {
+                            avoid: { top: coords.top, bottom: coords.bottom },
                             replaceFrom: triggerPos,
                             keepEditorFocus: true,
                             onClose: () => {

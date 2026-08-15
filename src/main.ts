@@ -54,7 +54,7 @@ export default class NotionBlock extends Plugin {
             view,
             view.state.doc.lineAt(head).number,
             { x: coords.left, y: coords.bottom + 6 },
-            { keepEditorFocus: true }
+            { avoid: { top: coords.top, bottom: coords.bottom }, keepEditorFocus: true }
         );
     }
 

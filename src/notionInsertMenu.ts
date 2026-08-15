@@ -35,6 +35,14 @@ interface MenuPosition {
 
 export interface InsertMenuOptions {
     /**
+     * Screen rectangle the menu must not cover — the line the caret is on.
+     *
+     * Without it the menu is merely clamped into the window, and a menu taller
+     * than the space below the caret slides up over the very text being typed:
+     * the filter still works, but blind.
+     */
+    avoid?: { top: number; bottom: number };
+    /**
      * Document offset of the trigger character. Everything from here to the
      * caret is deleted as part of the insert, so the `/query` never survives
      * into the note and the whole thing is one undo step.
@@ -349,6 +357,9 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         rows.forEach((row, index) => {
             row.toggleClass("is-active", index === this.activeIndex);
         });
+        // The list scrolls once the menu is capped, so arrowing past the
+        // bottom has to bring the row along or the highlight vanishes.
+        rows[this.activeIndex]?.scrollIntoView({ block: "nearest" });
     }
 
     private activateItem(item: InsertItem): void {
@@ -469,18 +480,47 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         }
     }
 
+    /**
+     * Places the menu below the anchor, or above it when it will not fit.
+     *
+     * Never between the two. The old behaviour was to slide the menu up until
+     * it fit on screen, which put it straight over the line being typed — the
+     * query kept filtering, but the user could not see what they were typing.
+     * Flipping keeps the caret visible, and the height is capped to whichever
+     * side was chosen so the list scrolls rather than overflowing back over it.
+     */
     private reposition(): void {
         if (!this.rootEl) return;
-        const rect = this.rootEl.getBoundingClientRect();
+
         const padding = 8;
+        const gap = 6;
+        const viewportHeight = this.ownerWindow.innerHeight;
+
+        // Measure at natural height first: the choice of side depends on how
+        // tall the menu wants to be, not on the cap left over from last time.
+        this.rootEl.style.maxHeight = "";
+        const rect = this.rootEl.getBoundingClientRect();
+
+        const anchorTop = this.options.avoid?.top ?? this.pos.y;
+        const spaceBelow = viewportHeight - padding - this.pos.y;
+        const spaceAbove = anchorTop - gap - padding;
+        const placeBelow = rect.height <= spaceBelow || spaceBelow >= spaceAbove;
+
+        // 120px keeps a few rows visible rather than collapsing to a sliver in
+        // a very short window; the list scrolls inside whatever is left.
+        const maxHeight = Math.min(560, Math.max(120, placeBelow ? spaceBelow : spaceAbove));
+        this.rootEl.style.maxHeight = `${maxHeight}px`;
+
+        const height = Math.min(rect.height, maxHeight);
+        const top = placeBelow
+            ? this.pos.y
+            : Math.max(padding, anchorTop - gap - height);
+
         let left = this.pos.x;
-        let top = this.pos.y;
         if (left + rect.width > this.ownerWindow.innerWidth - padding) {
             left = Math.max(padding, this.ownerWindow.innerWidth - rect.width - padding);
         }
-        if (top + rect.height > this.ownerWindow.innerHeight - padding) {
-            top = Math.max(padding, this.ownerWindow.innerHeight - rect.height - padding);
-        }
+
         this.rootEl.style.left = `${left}px`;
         this.rootEl.style.top = `${top}px`;
         this.positionFloatingSubmenu();
