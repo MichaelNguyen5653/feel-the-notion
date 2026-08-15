@@ -1,15 +1,16 @@
 {
-	"name": "notion-block",
-	"version": "1.4.0",
-	"description": "Notion-like block interactions for Live Preview.",
+	"name": "feel-the-notion",
+	"version": "0.1.0",
+	"description": "Notion-like block editing for Live Preview. Forked from BCS1037/notion-block v1.4.0.",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
+		"typecheck": "tsc --noEmit --skipLibCheck",
 		"version": "node version-bump.mjs && git add manifest.json versions.json"
 	},
 	"keywords": [],
-	"author": "BCS",
+	"author": "MichaelNguyen5653",
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
@@ -18,10 +19,11 @@
 		"tslib": "^2.8.1",
 		"typescript": "4.7.4"
 	},
+	"comment:codemirror": "Pinned to the EXACT versions obsidian's peerDependencies declare. These packages are `external` in esbuild — Obsidian supplies them at runtime — so the pins only feed TypeScript. Using a different version typechecks against an API that isn't what ships. Re-check with `npm view obsidian@latest peerDependencies` when bumping obsidian.",
 	"dependencies": {
 		"@codemirror/language": "^6.12.3",
-		"@codemirror/state": "^6.6.0",
-		"@codemirror/view": "^6.42.1",
+		"@codemirror/state": "6.5.0",
+		"@codemirror/view": "6.38.6",
 		"@lezer/common": "^1.5.2"
 	}
 }

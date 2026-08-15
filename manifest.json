@@ -1,10 +1,10 @@
 {
-	"id": "notion-block",
-	"name": "Notion block",
-	"version": "1.4.0",
+	"id": "feel-the-notion",
+	"name": "Feel the Notion",
+	"version": "0.1.0",
 	"minAppVersion": "1.5.7",
-	"description": "Notion-like block interactions for Live Preview.",
-	"author": "BCS",
-	"authorUrl": "https://github.com/bcs",
+	"description": "Notion-like block editing for Live Preview: block affordances, block-level undo, and multi-block selection.",
+	"author": "MichaelNguyen5653",
+	"authorUrl": "https://github.com/MichaelNguyen5653/feel-the-notion",
 	"isDesktopOnly": true
 }
