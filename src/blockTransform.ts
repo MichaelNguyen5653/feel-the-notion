@@ -137,7 +137,18 @@ function isImageFile(file: File): boolean {
 }
 
 function sanitizeAttachmentName(name: string): string {
-    return name.replace(/[\\/\r\n\t]/g, "-").trim() || "image.png";
+    // The name comes from the OS file picker, so it is the user's own and a
+    // browser hands over the basename only. Hardened anyway, because this
+    // string becomes a path: separators, characters Windows rejects, and
+    // control characters are replaced, and leading dots are dropped so nothing
+    // can resolve to "." or "..".
+    const cleaned = name
+        .replace(/[\\/:*?"<>|]/g, "-")
+        // eslint-disable-next-line no-control-regex
+        .replace(/[\u0000-\u001f\u007f]/g, "-")
+        .replace(/^\.+/, "")
+        .trim();
+    return cleaned || "attachment";
 }
 
 function getFileExtension(name: string): string {

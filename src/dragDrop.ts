@@ -99,6 +99,19 @@ export class DragManager {
         this.stopDrag();
     };
 
+    /**
+     * Tears down a drag in progress without applying it.
+     *
+     * The mousemove and mouseup listeners live on the document, so a view torn
+     * down mid-drag — closing the pane, disabling the plugin — would otherwise
+     * leave them attached to a view that no longer exists.
+     */
+    destroy() {
+        this.startBlock = null;
+        this.currentTargetLine = null;
+        this.stopDrag();
+    }
+
     private stopDrag() {
         if (!this.isDragging) return;
 

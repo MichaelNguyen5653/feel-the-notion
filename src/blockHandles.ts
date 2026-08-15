@@ -275,6 +275,14 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     destroy() {
         closeNotionBlockActionMenus();
         closeNotionBlockInsertMenus();
+        if (this.hideTimeout) {
+            this.ownerWindow.clearTimeout(this.hideTimeout);
+            this.hideTimeout = null;
+        }
+        // The drag manager's listeners are on the document, not on the view, so
+        // they outlive the view unless it says so explicitly.
+        this.dragManager?.destroy();
+        this.dragManager = null;
         if (this.handleEl) {
             this.handleEl.remove();
         }

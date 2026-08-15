@@ -5,3 +5,4 @@ PRD/
 FILETREE.md
 AGENT.md
 test/.build/
+*.tmp

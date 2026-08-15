@@ -1,44 +1,32 @@
-# Notion Block for Obsidian
+# Feel the Notion
 
-Bring Notion-like block interactions to Obsidian's Live Preview mode.
+> Recommended plugin to enhance experience: [Bullet depth markers](https://github.com/gsarig/obsidian-bullet-depth-markers)
 
-<img width="430" height="562" alt="image" src="https://github.com/user-attachments/assets/f84c7e2f-a3f9-49e6-872c-b394f9aeb2c4" />
-
+Notion-like block editing for Obsidian's Live Preview.
 
 ## Features
 
-### 1. Smooth Follow Handles
-- Handles smoothly follow your mouse vertically in the gutter area, automatically aligning with the line you're pointing at.
-- Allows you to perform actions on any line without needing to move the cursor first.
+- **Hover handles** — a `+` and a drag handle follow the pointer down the gutter.
+- **Drag whole blocks** — grabbing any line takes the block, children included, and drops it at a depth you choose with horizontal position.
+- **Multi-block selection** — a drag across blocks paints whole blocks rather than a ragged text range.
+- **Block-aware keys** — `Cmd+A` selects the block, then the note. `Backspace` at a block's start outdents, then drops the marker, then merges.
+- **Insert menu** — type `/` on an empty block, or click the `+`. Headings 1–5, callouts, code, math, tables, footnotes, images, and attachments.
+- **Hide syntax markers** — optional: stops text shifting sideways as the caret enters `**bold**`.
 
-### 2. Block Transformation Menu (`⠿`)
-- Click the handle to open a conversion menu using native Obsidian styling for a consistent look and feel.
-- Convert current blocks to:
-    - Headings (H1, H2, H3)
-    - Lists (Bullet, Numbered, Todo)
-    - Advanced Blocks (Code, Math, Divider, Quote)
-    - Callouts (supports 12 built-in types)
-
-### 3. Quick Insert Menu (`+`)
-- Click the `+` button to insert a new line below and open a searchable insertion menu.
-- Quickly add complex elements like Tables, Footnotes, and Frontmatter.
-
-### 4. Drag & Drop
-- Long-press the handle (150ms) to drag and reorder blocks visually.
-- Toggle between **Line mode** (single physical line) and **Paragraph mode** (logical block) via the handle's context menu (right-click).
+Everything behavioural has a toggle in settings.
 
 ## Installation
 
 ### Manual
-1. Download `main.js`, `manifest.json`, and `styles.css` from the [latest Release](https://github.com/BCS1037/notion-block/releases).
-2. Move the files to your vault's plugin folder: `<vault>/.obsidian/plugins/notion-block/`.
-3. Enable the plugin in Obsidian settings.
 
-## Support
-If this plugin helps you, consider supporting its development: [赞赏作者](https://ifdian.net/a/bcs1037)
+1. Download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/MichaelNguyen5653/feel-the-notion/releases).
+2. Put them in `<vault>/.obsidian/plugins/feel-the-notion/`.
+3. Enable the plugin in Settings → Community plugins.
 
-## Security & Compliance
-This plugin strictly follows [Obsidian Developer Policies](https://docs.obsidian.md/Developer+policies). It avoids using `innerHTML` and ensures all DOM manipulations are safe and performant.
+## Credits
+
+Forked from [BCS1037/notion-block](https://github.com/BCS1037/notion-block) v1.4.0 (MIT).
 
 ## License
-MIT License.
+
+MIT. See [LICENSE](LICENSE).
