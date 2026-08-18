@@ -136,3 +136,45 @@ test("an empty removal range is dropped rather than emitted", () => {
 	});
 	assert.equal(plan.changes.length, 1);
 });
+
+// ── inline triggering: the insert lands at the trigger, not at line end ─────
+
+test("an inline insert mid-line lands where the trigger was", () => {
+	// The bug allowing the menu to open mid-line introduced: the insert went
+	// to the end of the line, past text the user had already typed after the
+	// caret. "note /today and more" put the date after "more".
+	const out = run("note /today and more", {
+		insertText: "2026-08-17",
+		asBlock: false,
+		remove: { from: 5, to: 11 },
+	});
+	assert.equal(out.text, "note 2026-08-17 and more");
+	assert.equal(out.anchor, 15, "caret sits after the inserted text");
+});
+
+test("a block insert mid-line still goes to the end of the line", () => {
+	// Splicing a heading into the middle of a sentence would cut it in half.
+	const out = run("note /h1 and more", {
+		insertText: "# ",
+		asBlock: true,
+		remove: { from: 5, to: 8 },
+	});
+	assert.equal(out.text, "note  and more\n# ");
+});
+
+test("an inline insert with no removal still goes to the end of the line", () => {
+	const out = run("hello", { insertText: "!", asBlock: false });
+	assert.equal(out.text, "hello!");
+});
+
+test("an inline insert at the end of the line is unaffected", () => {
+	// The common case, and the one that worked before: the trigger IS the tail
+	// of the line, so trigger position and line end are the same place.
+	const out = run("note /today", {
+		insertText: "2026-08-17",
+		asBlock: false,
+		remove: { from: 5, to: 11 },
+	});
+	assert.equal(out.text, "note 2026-08-17");
+	assert.equal(out.anchor, 15);
+});

@@ -5,6 +5,7 @@ import NotionBlock from "./main";
 import { t } from "./locale/helpers";
 import { InsertChange, planInsert } from "./insertPlan";
 import { toMarkdownLink } from "./attachmentLink";
+import { collectHeadings, prefixLines, quotePrefix, tableOfContents } from "./tableOfContents";
 
 const IMAGE_EXTENSIONS = new Set(["avif", "bmp", "gif", "jpeg", "jpg", "png", "svg", "webp"]);
 
@@ -100,6 +101,99 @@ export async function insertAttachmentFiles(
     } catch {
         new Notice(t("notice.insertAttachmentFailed"));
     }
+}
+
+/**
+ * Creates a note beside the current one and links to it, Notion's /page.
+ *
+ * "Beside" is literal: the new note lands in the same folder as the note the
+ * command was run from, not in a subfolder, because Obsidian has no notion of
+ * a page owning another page — the link is the only relationship there is.
+ *
+ * The link goes in first and the new note is opened second. Reversing that
+ * would dispatch the insert into an editor that had already been swapped out
+ * from under it.
+ *
+ * The name is "Untitled" because there is nowhere to ask for one without a
+ * modal, and Obsidian rewrites the link automatically when the note is renamed
+ * from its title — which is the first thing anyone does.
+ */
+export async function insertNewPage(
+    plugin: NotionBlock,
+    view: EditorView,
+    lineNo: number,
+    remove?: RemoveRange
+): Promise<void> {
+    const active = plugin.app.workspace.getActiveFile();
+    const sourcePath = active?.path ?? "";
+    const folder = active?.parent?.path ?? "";
+
+    try {
+        const file = await plugin.app.vault.create(
+            availableNotePath(plugin, folder, t("page.untitled")),
+            ""
+        );
+        // generateMarkdownLink rather than a hand-built "[[name]]": it follows
+        // the vault's own link style and disambiguates a basename that already
+        // exists in another folder, which a bare wikilink would resolve to.
+        insertTextAtLineEnd(view, lineNo, plugin.app.fileManager.generateMarkdownLink(file, sourcePath), false, remove);
+        await plugin.app.workspace.getLeaf(false).openFile(file);
+    } catch {
+        new Notice(t("notice.createPageFailed"));
+    }
+}
+
+/** First "Untitled", "Untitled 1", ... that no note is already using. */
+function availableNotePath(plugin: NotionBlock, folder: string, base: string): string {
+    // The vault root's path is "/", not "", so joining naively produces
+    // "//Untitled.md" for every note that is not inside a folder.
+    const prefix = folder && folder !== "/" ? `${folder}/` : "";
+    for (let n = 0; n < 1000; n++) {
+        const path = `${prefix}${n === 0 ? base : `${base} ${n}`}.md`;
+        if (!plugin.app.vault.getAbstractFileByPath(path)) return path;
+    }
+    throw new Error("no available note name");
+}
+
+/**
+ * Inserts a snapshot of the note's headings as a titled, nested list of links.
+ *
+ * Callout-aware. A callout is a blockquote, so every line of a multi-line
+ * insert needs its `>` repeating — without that the first row stayed inside
+ * the `> [!info]` block and the rest fell out the bottom as loose text.
+ *
+ * With no headings the query is still deleted and a notice explains why
+ * nothing appeared — leaving "/table of contents" sitting in the note reads as
+ * the command having silently failed.
+ */
+export function insertTableOfContents(
+    view: EditorView,
+    lineNo: number,
+    remove?: RemoveRange
+): void {
+    const line = view.state.doc.line(lineNo);
+    const body = tableOfContents(collectHeadings(view.state.doc, lineNo), {
+        title: t("toc.title"),
+    });
+
+    if (body.length === 0) {
+        insertTextAtLineEnd(view, lineNo, "", false, remove);
+        new Notice(t("notice.noHeadings"));
+        return;
+    }
+
+    // What is left on this line once the query goes. A line holding nothing but
+    // its callout marker is an empty block, so the list belongs on it rather
+    // than on a new line below it.
+    const remaining = remove
+        ? line.text.slice(0, remove.from - line.from) + line.text.slice(remove.to - line.from)
+        : line.text;
+    const prefix = quotePrefix(line.text);
+    const onNewLine = remaining.slice(prefix.length).trim().length > 0;
+
+    // Staying on this line means the caret already sits after the marker, so
+    // the first row must not repeat it.
+    insertTextAtLineEnd(view, lineNo, prefixLines(body, prefix, !onNewLine), onNewLine, remove);
 }
 
 async function saveAttachments(
@@ -266,11 +360,12 @@ export function insertBlock(
             case "tomorrow": insertText = now().add(1, 'days').format(settings.dateFormat); break;
             case "time": insertText = now().format(settings.timeFormat); break;
             case "table": {
-                const col1 = `${t("table.column")} 1`;
-                const col2 = `${t("table.column")} 2`;
-                const col3 = `${t("table.column")} 3`;
-                insertText = `| ${col1} | ${col2} | ${col3} |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |`;
-                cursorOffset = 7 + col1.length + col2.length;
+                // Empty, not pre-filled with "Column 1/2/3". Placeholder text
+                // has to be selected and deleted three times before the table
+                // is usable, and it is the first thing anyone types over.
+                insertText = "|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |";
+                // Inside the first header cell.
+                cursorOffset = 2;
                 break;
             }
             case "frontmatter": {

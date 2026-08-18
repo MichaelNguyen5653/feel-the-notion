@@ -1,7 +1,14 @@
 import { setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
-import { RemoveRange, insertAttachmentFiles, insertBlock, insertImageFiles } from "./blockTransform";
+import {
+    RemoveRange,
+    insertAttachmentFiles,
+    insertBlock,
+    insertImageFiles,
+    insertNewPage,
+    insertTableOfContents,
+} from "./blockTransform";
 import { matchesQuery } from "./slashTrigger";
 import { placeMenu, placeSubmenu } from "./menuPosition";
 import { t } from "./locale/helpers";
@@ -237,7 +244,29 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
             { title: "", items: this.getInlineItems() },
             { title: "", items: this.getMetaItems() },
             { title: isFiltering ? t("menu.callout") : "", items: isFiltering ? this.getCalloutItems() : [] },
+            { title: "", items: this.getDismissItems() },
         ];
+    }
+
+    /**
+     * "Close menu" — leaves the typed trigger in the note as literal text.
+     *
+     * Escape already does this, but only if you know it does. Offered only
+     * when a trigger character was actually typed: opened from the "+" handle
+     * there is no "/" sitting in the document to keep, so the row would close
+     * a menu and do nothing else.
+     */
+    private getDismissItems(): InsertItem[] {
+        if (this.options.replaceFrom === undefined) return [];
+        return [{
+            id: "close",
+            label: t("menu.closeMenu"),
+            icon: "x",
+            keywords: ["escape", "esc", "dismiss", "cancel", "text", "literal"],
+            // Neither inserts nor removes: everything typed stays exactly
+            // where it is, which is the whole point of the row.
+            action: () => undefined,
+        }];
     }
 
     private getHeadingItems(): InsertItem[] {
@@ -254,6 +283,8 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         const items: InsertItem[] = [
             { id: "code", label: t("menu.code"), icon: "code", keywords: ["```"], action: () => this.insert("code") },
             { id: "math", label: t("menu.math"), icon: "sigma", keywords: ["latex", "$$"], action: () => this.insert("math") },
+            { id: "divider", label: t("menu.divider"), icon: "minus", keywords: ["hr", "---", "rule", "separator", "line", "break"], action: () => this.insert("divider") },
+            { id: "toc", label: t("menu.toc"), icon: "list-ordered", keywords: ["toc", "contents", "outline", "headings", "index"], action: () => this.insertTableOfContents() },
         ];
         if (!isFiltering) {
             items.push({
@@ -269,6 +300,7 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
 
     private getInlineItems(): InsertItem[] {
         return [
+            { id: "page", label: t("menu.page"), icon: "file-plus", keywords: ["note", "subpage", "new"], action: () => this.createPage() },
             { id: "link", label: t("menu.link"), icon: "link", keywords: ["wikilink", "[["], action: () => this.insert("link") },
             { id: "ext-link", label: t("menu.extLink"), icon: "link-2", keywords: ["url"], action: () => this.insert("ext-link") },
             { id: "image", label: t("menu.image"), icon: "image", keywords: ["photo", "picture"], action: () => this.openImagePicker() },
@@ -411,6 +443,21 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
 
     private insert(type: string): void {
         insertBlock(this.plugin, this.view, this.lineNo, type, this.removeRange());
+    }
+
+    private insertTableOfContents(): void {
+        insertTableOfContents(this.view, this.lineNo, this.removeRange());
+    }
+
+    /**
+     * The query range is read here, synchronously, and passed in.
+     *
+     * Creating the note is async, so the menu has already closed by the time
+     * the link is written — reading the range inside insertNewPage would read
+     * it from a menu that no longer exists.
+     */
+    private createPage(): void {
+        void insertNewPage(this.plugin, this.view, this.lineNo, this.removeRange());
     }
 
     private openImagePicker(): boolean {

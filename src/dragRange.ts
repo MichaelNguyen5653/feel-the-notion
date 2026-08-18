@@ -5,10 +5,11 @@ import { EditorSelection, Text } from "@codemirror/state";
  * land.
  *
  * THE MENTAL MODEL
- * A "block" is what the reader sees as one thing. That is rarely one line:
- * a wrapped paragraph is several, and a list item owns everything nested
- * beneath it. Grabbing any line of a block must take the whole block, and a
- * parent must bring its children.
+ * A "block" is what the reader sees as one thing: one document line, plus
+ * everything indented beneath it. Soft wrapping does not split a line, so a
+ * paragraph that runs over three rows is still one block; two lines sitting at
+ * the same indent are two blocks even with no blank line between them, which
+ * is exactly how Obsidian renders them. A parent brings its children.
  *
  * PRIORITY ORDER
  * 1. A multi-block selection containing the handle -> drag the whole
@@ -73,30 +74,30 @@ export function isBlockStart(text: string): boolean {
 /**
  * Walks up to the first line of the block containing `lineNo`.
  *
- * Stops at a block start, because that line owns itself. A plain wrapped
- * paragraph has no block starts, so the walk runs to the blank line above it,
- * which is what makes grabbing any line of a paragraph take all of it.
+ * Only a line indented DEEPER than the one above it is a continuation of it.
+ * Everything else starts its own block.
+ *
+ * This used to walk up through every consecutive non-blank line, on the theory
+ * that a wrapped paragraph is one block. That theory was wrong: soft wrapping
+ * does not create document lines, so a "wrapped paragraph" is a single line
+ * already. What the walk actually collected was separate lines the reader sees
+ * as separate blocks — and dragging any one of them moved the whole run and
+ * re-indented all of it, which is the bug this rule exists to fix.
  */
 function findBlockStart(doc: Text, lineNo: number): number {
 	let start = lineNo;
 	while (start > 1) {
-		if (isBlockStart(doc.line(start).text)) break;
+		const current = doc.line(start);
+		// A marker line owns itself. A list item, heading, quote or fence is
+		// never a continuation of whatever sits above it.
+		if (isBlockStart(current.text)) break;
+
 		const previous = doc.line(start - 1);
 		if (isBlank(previous.text)) break;
 
-		// Stop below a structured line at the same or shallower indent. It owns
-		// only what is nested under it — the mirror of findBlockEnd's rule — so
-		// a plain line sitting level with it is a separate block.
-		//
-		// Without this the line after a closing ``` or a heading walked up INTO
-		// that line, and the walk then stopped there and returned ITS range:
-		// grabbing the paragraph under a heading dragged the heading instead.
-		if (
-			isBlockStart(previous.text) &&
-			indentWidth(previous.text) >= indentWidth(doc.line(start).text)
-		) {
-			break;
-		}
+		// Same indent or shallower: a block of its own, not a continuation.
+		if (indentWidth(current.text) <= indentWidth(previous.text)) break;
+
 		start--;
 	}
 	return start;
@@ -105,48 +106,28 @@ function findBlockStart(doc: Text, lineNo: number): number {
 /**
  * Walks down to the last line owned by the block starting at `start`.
  *
- * Always includes lines indented deeper — nested items and their own children
- * travel with the parent.
+ * A block owns exactly what is indented under it: nested items, their own
+ * children, and continuation lines. Anything back at the block's own indent is
+ * the next block, whether or not it carries a marker.
  *
- * Lines at the SAME indent are where it gets subtle, and getting it wrong was
- * a real bug. A structured block (list item, heading, quote) owns only what is
- * indented under it: a list item's continuation has to reach the content
- * column, so a line sitting back at the marker's own indent is a separate
- * block, not part of this one. Absorbing those meant dragging
+ * Absorbing same-indent lines was the other half of the bug above. Dragging
  *
- *     - The shirt is white
+ *     The shirt is white
  *     The score is now 1-1
  *     bob's furniture
  *
- * by its first line carried all three away, scattering two paragraphs the user
+ * by its first line carried all three away, scattering two blocks the user
  * never touched.
- *
- * Plain prose is the opposite: it has no marker, so consecutive same-indent
- * lines ARE one wrapped paragraph and must stay together.
  */
 function findBlockEnd(doc: Text, start: number): number {
-	const startText = doc.line(start).text;
-	const baseIndent = indentWidth(startText);
-	// Structured blocks own only what is nested beneath them.
-	const ownsOnlyDeeper = isBlockStart(startText);
+	const baseIndent = indentWidth(doc.line(start).text);
 	let end = start;
 
 	while (end < doc.lines) {
 		const next = doc.line(end + 1);
 		if (isBlank(next.text)) break;
-
-		const nextIndent = indentWidth(next.text);
-		// Deeper: a child of this block, so it travels with the parent.
-		if (nextIndent > baseIndent) {
-			end++;
-			continue;
-		}
-		// Same indent: only prose absorbs it, as a wrapped continuation.
-		if (!ownsOnlyDeeper && nextIndent === baseIndent && !isBlockStart(next.text)) {
-			end++;
-			continue;
-		}
-		break;
+		if (indentWidth(next.text) <= baseIndent) break;
+		end++;
 	}
 
 	return end;

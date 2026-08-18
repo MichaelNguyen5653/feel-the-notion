@@ -41,10 +41,19 @@ export function planInsert(input: InsertPlanInput): InsertPlan {
 	const { lineFrom, lineTo, lineText, insertText, remove, extra = [] } = input;
 	const cursorOffset = input.cursorOffset ?? insertText.length;
 
+	// Inline inserts land where the trigger was, not at the end of the line.
+	//
+	// End of line was fine while the menu only opened on an empty block: the
+	// trigger was the whole line. Once it can open mid-line, "note /today more"
+	// put the date after "more" instead of where the caret sat. Block inserts
+	// still go to the end, because a heading spliced into the middle of a
+	// sentence would cut the sentence in half.
+	const defaultAt = remove && !input.asBlock ? remove.from : lineTo;
+
 	// An insertion point inside the removed span is pushed to just after it.
 	// Left alone, a change that inserts at the same offset a deletion starts
 	// from is an overlap, and CodeMirror rejects overlapping changes outright.
-	let at = input.at ?? lineTo;
+	let at = input.at ?? defaultAt;
 	if (remove && at >= remove.from && at < remove.to) at = remove.to;
 
 	// Whether a new line is needed is judged AFTER the removal: a line holding

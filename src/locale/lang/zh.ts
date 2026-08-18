@@ -42,6 +42,8 @@ const zh: LocaleType = {
     "menu.code": "代码块",
     "menu.math": "数学块",
     "menu.divider": "分割线",
+    "menu.toc": "目录",
+    "menu.page": "页面",
 
     "menu.copyLink": "拷贝区块链接",
     "menu.delete": "删除",
@@ -108,8 +110,12 @@ const zh: LocaleType = {
     "notice.selectImage": "请选择图片文件。",
     "notice.insertImageFailed": "插入图片失败。",
     "notice.insertAttachmentFailed": "插入附件失败。",
+    "notice.createPageFailed": "创建页面失败。",
+    "notice.noHeadings": "此笔记没有可列出的标题。",
     "command.openInsertMenu": "打开块插入菜单",
-    "table.column": "列"
+    "menu.closeMenu": "关闭菜单",
+    "page.untitled": "未命名",
+    "toc.title": "目录"
 };
 
 export default zh;

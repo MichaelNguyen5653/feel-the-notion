@@ -8,14 +8,39 @@
 /**
  * True when the trigger character should open the menu.
  *
- * Only on an otherwise empty block — the same rule Notion uses. Triggering
- * mid-sentence would mean a `/` in ordinary prose ("and/or", a URL, a date)
- * popped a menu over the text being written, and it would leave the insert
- * with no sensible place to land: half the entries are whole blocks.
- * Indentation does not count as content, so an empty nested bullet still works.
+ * On an empty block always — the same rule Notion uses. Indentation, a list
+ * marker and a callout's `>` do not count as content, so an empty nested
+ * bullet and an empty line inside an `> [!info]` block both work.
+ *
+ * `allowInline` extends it to the middle of a line, and the guard there is
+ * that the trigger must follow whitespace. That is what keeps a `/` inside
+ * ordinary prose quiet: "and/or", "https://example.com", "12/07" all have a
+ * non-space character in front of the slash and none of them opens a menu,
+ * while "note: /" does.
  */
-export function isSlashTriggerPosition(textBeforeTrigger: string): boolean {
-	return textBeforeTrigger.trim().length === 0;
+export function isSlashTriggerPosition(textBeforeTrigger: string, allowInline = false): boolean {
+	if (stripMarkers(textBeforeTrigger).trim().length === 0) return true;
+	if (!allowInline) return false;
+	return /\s$/.test(textBeforeTrigger);
+}
+
+/** One leading marker: a quote level, a bullet, a task box, a number. */
+const MARKER = /^[ \t]*(?:>[ \t]*|(?:[-*+]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)/;
+
+/**
+ * Drops the structure a line opens with, leaving whatever the user typed.
+ *
+ * An empty bullet, an empty numbered item and an empty callout body line are
+ * all empty blocks as far as the reader is concerned, so the trigger has to
+ * work on them. Looping handles nesting: `> > ` and `- [ ] ` are two markers.
+ */
+function stripMarkers(text: string): string {
+	let out = text;
+	for (;;) {
+		const next = out.replace(MARKER, "");
+		if (next === out) return out;
+		out = next;
+	}
 }
 
 /**

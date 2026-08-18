@@ -21,6 +21,8 @@ export interface BlockPluginSettings {
     slashMenu: boolean;
     /** The character that opens it. */
     slashTrigger: string;
+    /** Also open it mid-line, after a space, rather than on empty blocks only. */
+    slashInline: boolean;
     /** Write inserted attachments as embeds (a leading "!") rather than links. */
     embedAttachments: boolean;
 }
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     plusHandle: true,
     slashMenu: true,
     slashTrigger: '/',
+    slashInline: true,
     // OFF by default, as asked: an attachment reads as a link unless it is
     // explicitly meant to render inline.
     embedAttachments: false,
@@ -186,9 +189,8 @@ export class BlockPluginSettingTab extends PluginSettingTab {
         new Setting(containerEl)
             .setName('Open the insert menu by typing')
             .setDesc(
-                'Type the trigger character on an otherwise empty block to open the same menu '
-                + 'the "+" handle opens, then keep typing to filter it. '
-                + 'It deliberately does not trigger mid-sentence, so a "/" in ordinary prose is left alone.'
+                'Type the trigger character to open the same menu the "+" handle opens, '
+                + 'then keep typing to filter it.'
             )
             .addToggle(toggle => toggle
                 .setValue(this.plugin.settings.slashMenu)
@@ -205,6 +207,20 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.slashTrigger)
                 .onChange(async (value) => {
                     this.plugin.settings.slashTrigger = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName('Open it mid-line too')
+            .setDesc(
+                'Off: the trigger only works on an otherwise empty block. '
+                + 'On: it also works in the middle of a line, as long as it follows a space \u2014 '
+                + 'so "and/or", a URL and a date are still left alone.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.slashInline)
+                .onChange(async (value) => {
+                    this.plugin.settings.slashInline = value;
                     await this.plugin.saveSettings();
                 }));
 

@@ -118,20 +118,22 @@ test("Backspace under nothing but blank lines does nothing", () => {
 const DOC = ["para one line A", "para one line B", "", "- item", "\t- child"].join("\n");
 
 test("Cmd+A with a caret selects the block it is in", () => {
+	// One line, not the whole run: two lines at the same indent are two
+	// blocks, the same rule the drag now uses. See dragRange.test.mjs.
 	const doc = docOf(DOC);
 	const plan = planSelectAll(doc, EditorSelection.cursor(3));
-	assert.deepEqual(plan, { from: 0, to: 31 }, "both lines of the wrapped paragraph");
+	assert.deepEqual(plan, { from: 0, to: 15 }, "the line the caret is on");
 });
 
 test("Cmd+A over a partial selection still selects the block first", () => {
 	const doc = docOf(DOC);
 	const plan = planSelectAll(doc, EditorSelection.range(2, 6));
-	assert.deepEqual(plan, { from: 0, to: 31 });
+	assert.deepEqual(plan, { from: 0, to: 15 });
 });
 
 test("Cmd+A on a whole block escalates to the document", () => {
 	const doc = docOf(DOC);
-	const plan = planSelectAll(doc, EditorSelection.range(0, 31));
+	const plan = planSelectAll(doc, EditorSelection.range(0, 15));
 	assert.deepEqual(plan, { from: 0, to: doc.length });
 });
 

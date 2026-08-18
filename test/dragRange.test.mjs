@@ -38,16 +38,42 @@ const DOC = [
 ].join("\n");
 
 const doc = () => EditorState.create({ doc: DOC }).doc;
+const listDoc = (lines) => EditorState.create({ doc: lines.join("\n") }).doc;
 const textOf = (d, r) => d.sliceString(r.from, r.to);
 
 // ── whole block, from any line ─────────────────────────────────────────────
 
-test("grabbing any line of a wrapped paragraph takes the whole paragraph", () => {
+test("two prose lines at the same indent are two blocks", () => {
+	// Reported with a screenshot: dragging one line of a run of plain lines
+	// moved the whole run and re-indented all of it. Soft wrapping does not
+	// create document lines, so consecutive lines here are separate blocks the
+	// reader sees on separate rows — not one wrapped paragraph.
 	const d = doc();
 	for (const line of [1, 2]) {
 		const r = resolveDragRange(d, line, "paragraph");
-		assert.equal(textOf(d, r), "para one line A\npara one line B", `from line ${line}`);
+		assert.deepEqual([r.firstLine, r.lastLine], [line, line], `from line ${line}`);
 	}
+});
+
+test("a link line drags alone, not the plain lines above it", () => {
+	// The exact reported document: a link sitting under three plain lines.
+	// Dropping it one level deeper used to indent all four.
+	const d = listDoc([
+		"This is the way to do it",
+		"    This is not the way",
+		"This is not the way to do it",
+		"[Feel the Notion](https://example.com)",
+		"- This is the way",
+	]);
+	const r = resolveDragRange(d, 4, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [4, 4]);
+	assert.equal(textOf(d, r), "[Feel the Notion](https://example.com)");
+});
+
+test("a plain line still carries a line indented under it", () => {
+	const d = listDoc(["This is the way to do it", "    This is not the way", "back out"]);
+	const r = resolveDragRange(d, 1, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine], [1, 2], "the indented child comes along");
 });
 
 test("a parent list item carries its children and grandchildren", () => {
@@ -195,7 +221,6 @@ test("re-indent is reversible", () => {
 
 // ── drop-indent selection ──────────────────────────────────────────────────
 
-const listDoc = (lines) => EditorState.create({ doc: lines.join("\n") }).doc;
 
 test("flat prose offers no indent choice", () => {
 	// The stated requirement: no indent in context means no indent selection.

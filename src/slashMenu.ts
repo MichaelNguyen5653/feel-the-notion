@@ -50,7 +50,8 @@ export const slashMenuExtension = (plugin: NotionBlock) =>
                 const col = head - line.from;
                 if (col < trigger.length) return;
                 if (line.text.slice(col - trigger.length, col) !== trigger) return;
-                if (!isSlashTriggerPosition(line.text.slice(0, col - trigger.length))) return;
+                const before = line.text.slice(0, col - trigger.length);
+                if (!isSlashTriggerPosition(before, plugin.settings.slashInline)) return;
                 if (isInsideCodeFence(state.doc, line.number)) return;
 
                 this.scheduleOpen(update.view, head - trigger.length);

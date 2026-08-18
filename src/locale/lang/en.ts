@@ -40,6 +40,8 @@ const en = {
     "menu.code": "Code block",
     "menu.math": "Math block",
     "menu.divider": "Divider",
+    "menu.toc": "Table of contents",
+    "menu.page": "Page",
 
     "menu.copyLink": "Copy block link",
     "menu.delete": "Delete",
@@ -106,8 +108,12 @@ const en = {
     "notice.selectImage": "Please select an image file.",
     "notice.insertImageFailed": "Failed to insert image.",
     "notice.insertAttachmentFailed": "Failed to insert attachment.",
+    "notice.createPageFailed": "Failed to create the page.",
+    "notice.noHeadings": "This note has no headings to list.",
     "command.openInsertMenu": "Open block insert menu",
-    "table.column": "Column"
+    "menu.closeMenu": "Close menu",
+    "page.untitled": "Untitled",
+    "toc.title": "Table of contents"
 };
 
 export default en;

@@ -42,6 +42,8 @@ const zhTw: LocaleType = {
     "menu.code": "程式碼區塊",
     "menu.math": "數學區塊",
     "menu.divider": "分割線",
+    "menu.toc": "目錄",
+    "menu.page": "頁面",
 
     "menu.copyLink": "複製區塊連結",
     "menu.delete": "刪除",
@@ -108,8 +110,12 @@ const zhTw: LocaleType = {
     "notice.selectImage": "請選擇圖片檔案。",
     "notice.insertImageFailed": "插入圖片失敗。",
     "notice.insertAttachmentFailed": "插入附件失敗。",
+    "notice.createPageFailed": "建立頁面失敗。",
+    "notice.noHeadings": "此筆記沒有可列出的標題。",
     "command.openInsertMenu": "開啟區塊插入選單",
-    "table.column": "欄"
+    "menu.closeMenu": "關閉選單",
+    "page.untitled": "未命名",
+    "toc.title": "目錄"
 };
 
 export default zhTw;

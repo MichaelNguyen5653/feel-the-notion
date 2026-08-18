@@ -37,6 +37,44 @@ test("a slash mid-sentence is left alone", () => {
 	}
 });
 
+// ── inline triggering ──────────────────────────────────────────────────────
+
+test("inline mode opens the menu after a space", () => {
+	assert.equal(isSlashTriggerPosition("write a note ", true), true);
+	assert.equal(isSlashTriggerPosition("- a bullet with text ", true), true);
+});
+
+test("inline mode still leaves prose, URLs and dates alone", () => {
+	// The guard is a space in front of the trigger, which is what keeps every
+	// slash people actually type quiet.
+	for (const before of ["and", "https:/", "12", "path/to"]) {
+		assert.equal(isSlashTriggerPosition(before, true), false, before);
+	}
+});
+
+test("an empty callout or list line counts as an empty block", () => {
+	// Reported: a table of contents could not be added inside an `> [!info]`
+	// block because the trigger never fired on its empty body line.
+	for (const before of ["> ", "> > ", "  > ", "- ", "- [ ] ", "1. ", "    - "]) {
+		assert.equal(isSlashTriggerPosition(before), true, JSON.stringify(before));
+	}
+});
+
+test("a callout's own title line is content, not a bare marker", () => {
+	assert.equal(isSlashTriggerPosition("> [!info] "), false);
+	assert.equal(isSlashTriggerPosition("- a bullet "), false);
+});
+
+test("inline mode does not change the empty-block rule", () => {
+	assert.equal(isSlashTriggerPosition("", true), true);
+	assert.equal(isSlashTriggerPosition("    - ", true), true);
+});
+
+test("inline mode off keeps the trigger to empty blocks", () => {
+	assert.equal(isSlashTriggerPosition("write a note ", false), false);
+	assert.equal(isSlashTriggerPosition("write a note "), false, "defaults to off");
+});
+
 // ── the query ──────────────────────────────────────────────────────────────
 
 test("the query is everything typed after the trigger", () => {
