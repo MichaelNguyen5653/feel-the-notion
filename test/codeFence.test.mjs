@@ -9,7 +9,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EditorState } from "@codemirror/state";
-import { codeFenceContent, findCodeFence, isInsideCodeFence } from "./.build/codeFence.js";
+import {
+	codeFenceContent,
+	findCodeFence,
+	findFencedLines,
+	isInsideCodeFence,
+} from "./.build/codeFence.js";
 
 const docOf = (lines) => EditorState.create({ doc: lines.join("\n") }).doc;
 
@@ -134,4 +139,53 @@ test("an empty block has no content to select", () => {
 
 test("a line outside a fence has no content range", () => {
 	assert.equal(codeFenceContent(docOf(DOC), 1), null);
+});
+
+// ── findFencedLines: the single-scan version used on the per-line hot path ──
+
+test("findFencedLines agrees with isInsideCodeFence, one call for the whole doc", () => {
+	const doc = docOf(DOC);
+	const fenced = findFencedLines(doc);
+	for (let n = 1; n <= doc.lines; n++) {
+		assert.equal(fenced.has(n), isInsideCodeFence(doc, n), `line ${n}`);
+	}
+});
+
+test("the opening fence line is excluded, interior lines and the closer are included", () => {
+	const fenced = findFencedLines(docOf(DOC));
+	assert.equal(fenced.has(2), false, "opener");
+	assert.equal(fenced.has(3), true);
+	assert.equal(fenced.has(4), true);
+	assert.equal(fenced.has(5), true, "closer");
+	assert.equal(fenced.has(1), false);
+	assert.equal(fenced.has(6), false);
+});
+
+test("tilde fences are found too", () => {
+	const fenced = findFencedLines(docOf(["~~~", "code", "~~~", "after"]));
+	assert.deepEqual([...fenced], [2, 3]);
+});
+
+test("an unterminated fence runs to the end of the document", () => {
+	const fenced = findFencedLines(docOf(["prose", "```", "a", "b", "c"]));
+	assert.deepEqual([...fenced], [3, 4, 5]);
+});
+
+test("a fence closes only with its own marker: nested/mismatched fences stay one block", () => {
+	// ``` containing ~~~ must not let the ~~~ be mistaken for a close/open of
+	// its own — everything through the matching ``` stays inside one fence.
+	const doc = docOf(["```", "~~~", "still code", "```", "after"]);
+	const fenced = findFencedLines(doc);
+	assert.deepEqual([...fenced], [2, 3, 4]);
+});
+
+test("a document with no fences yields an empty set", () => {
+	const fenced = findFencedLines(docOf(["one", "two", "three"]));
+	assert.equal(fenced.size, 0);
+});
+
+test("two separate blocks each contribute their own lines", () => {
+	const doc = docOf(["```", "a", "```", "prose", "```", "b", "```"]);
+	const fenced = findFencedLines(doc);
+	assert.deepEqual([...fenced], [2, 3, 6, 7]);
 });

@@ -30,6 +30,10 @@ export interface InsertPlanInput {
 	at?: number;
 	/** Changes elsewhere in the document, carried in the same transaction. */
 	extra?: InsertChange[];
+	/** Markdown ignores a table that is not separated from the text above it. */
+	needsBlankLine?: boolean;
+	/** Whether the line above the current one has content. Read only when needsBlankLine. */
+	previousLineHasContent?: boolean;
 }
 
 export interface InsertPlan {
@@ -38,7 +42,7 @@ export interface InsertPlan {
 }
 
 export function planInsert(input: InsertPlanInput): InsertPlan {
-	const { lineFrom, lineTo, lineText, insertText, remove, extra = [] } = input;
+	const { lineFrom, lineTo, lineText, insertText, remove, extra = [], needsBlankLine, previousLineHasContent } = input;
 	const cursorOffset = input.cursorOffset ?? insertText.length;
 
 	// Inline inserts land where the trigger was, not at the end of the line.
@@ -64,13 +68,27 @@ export function planInsert(input: InsertPlanInput): InsertPlan {
 		: lineText;
 	const needsNewLine = input.asBlock && remaining.trim().length > 0;
 
+	// A table dropped straight onto the line under a paragraph, or onto an
+	// empty line with no blank line above it, renders as plain text — GFM
+	// tables require a blank line separating them from preceding content.
+	// needsNewLine alone isn't enough: it only opens a line for a block sitting
+	// on top of existing text, not the second newline a table also needs, nor
+	// the case where the current line is already empty but the one above it
+	// is not.
+	let prefix = "";
+	if (needsNewLine) {
+		prefix = needsBlankLine ? "\n\n" : "\n";
+	} else if (needsBlankLine && previousLineHasContent) {
+		prefix = "\n";
+	}
+
 	const changes: InsertChange[] = [];
 	if (remove && remove.to > remove.from) changes.push({ from: remove.from, to: remove.to });
-	changes.push({ from: at, insert: (needsNewLine ? "\n" : "") + insertText });
+	changes.push({ from: at, insert: prefix + insertText });
 	changes.push(...extra);
 
 	const removedBefore = remove && remove.to <= at ? remove.to - remove.from : 0;
-	const anchor = at - removedBefore + (needsNewLine ? 1 : 0) + cursorOffset;
+	const anchor = at - removedBefore + prefix.length + cursorOffset;
 
 	return { changes, anchor };
 }

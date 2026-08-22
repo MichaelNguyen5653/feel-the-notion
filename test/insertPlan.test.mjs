@@ -178,3 +178,63 @@ test("an inline insert at the end of the line is unaffected", () => {
 	assert.equal(out.text, "note 2026-08-17");
 	assert.equal(out.anchor, 15);
 });
+
+// ── needsBlankLine: a table dropped without a blank line above it renders as
+// literal pipe-and-dash text instead of a table ──────────────────────────────
+
+const TABLE = "|  |  |  |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |";
+
+test("a table under a line with content gets a full blank line, not just a new line", () => {
+	// One "\n" (the old asBlock behaviour) puts the table directly under the
+	// paragraph: "alpha\n| | |" still renders as text under GFM rules. It takes
+	// a second newline to leave an actual blank line.
+	const out = run("alpha", {
+		insertText: TABLE,
+		asBlock: true,
+		cursorOffset: 2,
+		needsBlankLine: true,
+		previousLineHasContent: false,
+	});
+	assert.equal(out.text, "alpha\n\n" + TABLE);
+	assert.equal(out.anchor, 9, "caret inside the first header cell, after two newlines");
+});
+
+test("a table on an empty line under a paragraph still needs a blank line inserted", () => {
+	// asBlock alone sees an empty current line and opens no new line at all, so
+	// the table would land directly under the line above with nothing between
+	// them. previousLineHasContent is what catches this — needsNewLine can't,
+	// since it only looks at the current line.
+	const out = run("", {
+		insertText: TABLE,
+		asBlock: true,
+		cursorOffset: 2,
+		needsBlankLine: true,
+		previousLineHasContent: true,
+	});
+	assert.equal(out.text, "\n" + TABLE);
+	assert.equal(out.anchor, 3);
+});
+
+test("a table on an empty line under an already-blank line does not gain a stray blank line", () => {
+	// Regression guard: previousLineHasContent false must produce the same
+	// empty prefix as before this feature existed, not an unwanted extra "\n"
+	// above a table that already had proper separation.
+	const out = run("", {
+		insertText: TABLE,
+		asBlock: true,
+		cursorOffset: 2,
+		needsBlankLine: true,
+		previousLineHasContent: false,
+	});
+	assert.equal(out.text, TABLE);
+	assert.equal(out.anchor, 2);
+});
+
+test("needsBlankLine unset leaves block inserts byte-identical to before this feature", () => {
+	// Every other block type (heading, callout, code, ...) never sets
+	// needsBlankLine, so it must fall back to exactly the old single-"\n"
+	// behaviour with no change in text or caret.
+	const out = run("alpha", { insertText: "# ", asBlock: true });
+	assert.equal(out.text, "alpha\n# ");
+	assert.equal(out.anchor, 8);
+});

@@ -54,6 +54,8 @@ const zhTw: LocaleType = {
     "menu.attachment": "插入附件",
     "menu.table": "表格",
     "menu.today": "今天",
+    "menu.yesterday": "昨天",
+    "menu.tomorrow": "明天",
     "menu.time": "當前時間",
     "menu.footnote": "腳註",
     "menu.comment": "註解",

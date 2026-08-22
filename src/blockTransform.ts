@@ -238,6 +238,7 @@ function insertTextAtLineEnd(
         scrollIntoView: true,
         userEvent: "insert.block"
     });
+
 }
 
 function isImageFile(file: File): boolean {
@@ -399,6 +400,13 @@ export function insertBlock(
 
     const isNewLine = !isMetadata && !["link", "ext-link", "embed", "tag", "comment", "today", "yesterday", "tomorrow", "time"].includes(targetType);
 
+    // Tables render as literal text without a blank line above them. The line
+    // above the insertion point decides whether that blank line already
+    // exists; planInsert only ever sees the current line, so the check has to
+    // happen here, where the full document is available.
+    const needsBlankLine = targetType === "table";
+    const previousLineHasContent = needsBlankLine && lineNo > 1 && view.state.doc.line(lineNo - 1).text.trim().length > 0;
+
     const plan = planInsert({
         lineFrom: line.from,
         lineTo: line.to,
@@ -409,6 +417,8 @@ export function insertBlock(
         at: customPos ?? undefined,
         remove,
         extra: extraChanges,
+        needsBlankLine,
+        previousLineHasContent,
     });
 
     dispatchBlockEdit(view, {
@@ -417,4 +427,21 @@ export function insertBlock(
         scrollIntoView: true,
         userEvent: "insert.block"
     });
+
+    // The caret lands in the first cell arithmetically — planInsert is tested
+    // on exactly that — and then Obsidian moves it. A table becomes a rendered
+    // widget, and the decision about where the caret goes is made while the
+    // widget is being built, from a document state where the table does not
+    // exist yet: it ends up past the whole thing instead of inside it.
+    //
+    // Re-asserting the same position once the widget exists is what sticks.
+    // Selection-only, so it costs no extra undo step, and it is skipped if the
+    // document moved underneath in the meantime.
+    if (targetType === "table") {
+        const win = view.dom.ownerDocument.defaultView ?? activeWindow;
+        win.requestAnimationFrame(() => {
+            if (plan.anchor > view.state.doc.length) return;
+            view.dispatch({ selection: { anchor: plan.anchor }, scrollIntoView: true });
+        });
+    }
 }

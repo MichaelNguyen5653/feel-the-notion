@@ -104,6 +104,32 @@ test("ranges are sorted and never overlap", () => {
 	}
 });
 
+// ── inline code spans: contents are code, not markdown ──────────────────────
+
+test("underscores inside an inline code span are not hidden as emphasis", () => {
+	// The reported bug: `_VARIABLE_A_` had its two underscores paired and
+	// hidden like real emphasis, rendering as "VARIABLEA_" instead of the
+	// literal code text.
+	assert.equal(hide("`_VARIABLE_A_`"), "_VARIABLE_A_");
+});
+
+test("inline code span hides only its two backticks", () => {
+	const r = findMarkerRanges("`_VARIABLE_A_`");
+	assert.deepEqual(r, [
+		{ from: 0, to: 1 },
+		{ from: 13, to: 14 },
+	]);
+});
+
+test("markers before and after a code span on the same line still hide", () => {
+	assert.equal(hide("**bold** `_A_` __also bold__"), "bold _A_ also bold");
+});
+
+test("an unmatched backtick changes nothing else on the line", () => {
+	// No closing backtick on the line — it is literal text, same as a lone `*`.
+	assert.equal(hide("a `dangling and **bold**"), "a `dangling and bold");
+});
+
 test("plain text yields nothing", () => {
 	assert.deepEqual(findMarkerRanges("just a normal sentence."), []);
 });

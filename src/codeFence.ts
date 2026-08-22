@@ -78,6 +78,43 @@ export function isInsideCodeFence(doc: Text, lineNo: number): boolean {
 }
 
 /**
+ * All line numbers inside a fenced block, for the whole document, in one pass.
+ *
+ * findCodeFence rescans from line 1 every time it is called, which is fine for
+ * the odd lookup triggered by a keypress but not for a check run per visible
+ * line on every keystroke and selection change — that pattern would make the
+ * caller O(lines × docLines). Compute the set once per pass instead and query
+ * it with plain has() calls.
+ *
+ * Same convention as isInsideCodeFence: the opening fence line is not "inside",
+ * every line after it up to and including the closer is.
+ */
+export function findFencedLines(doc: Text): Set<number> {
+	const fenced = new Set<number>();
+	let openChar: string | null = null;
+	let n = 0;
+
+	for (const text of doc.iterLines()) {
+		n++;
+		const match = FENCE.exec(text);
+
+		if (openChar !== null) {
+			fenced.add(n);
+			if (match && match[1] === openChar) {
+				// A fence closes only with the character it opened with, so a ```
+				// block containing ~~~ stays one block. See findCodeFence above.
+				openChar = null;
+			}
+			continue;
+		}
+
+		if (match) openChar = match[1];
+	}
+
+	return fenced;
+}
+
+/**
  * The code between the fences, as document offsets.
  *
  * Excludes the fence lines: this is what you would want on the clipboard.

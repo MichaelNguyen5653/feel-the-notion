@@ -27,7 +27,7 @@ export interface MarkerRange {
  * Paired inline delimiters, longest first so `**` wins over `*` and `~~` over
  * `~`. Order matters: the scanner takes the first match at a position.
  */
-const PAIRED = ["***", "___", "**", "__", "==", "~~", "*", "_", "`"];
+const PAIRED = ["***", "___", "**", "__", "==", "~~", "*", "_"];
 
 /** ``` fences, $$ math, and anything inside them, are left alone entirely. */
 const FENCE = /^\s*(```|~~~|\$\$)/;
@@ -64,6 +64,26 @@ export function findMarkerRanges(lineText: string, lineFrom = 0): MarkerRange[] 
 	while (i < lineText.length) {
 		if (lineText[i] === "\\") {
 			i += 2; // escaped character — the next char is literal
+			continue;
+		}
+
+		// Backtick is handled separately from the PAIRED loop below, rather than
+		// through the openers map, because its contents are code and must never
+		// be scanned for other markers. `_VARIABLE_A_` inside a code span used to
+		// have its underscores paired and hidden like real emphasis, because the
+		// generic loop just kept walking character by character through the span.
+		if (lineText[i] === "`") {
+			const close = lineText.indexOf("`", i + 1);
+			if (close === -1) {
+				// No closing backtick on this line — literal text, leave it alone.
+				i++;
+				continue;
+			}
+			if (close > i + 1) {
+				ranges.push({ from: lineFrom + i, to: lineFrom + i + 1 });
+				ranges.push({ from: lineFrom + close, to: lineFrom + close + 1 });
+			}
+			i = close + 1; // skip past the span's contents entirely
 			continue;
 		}
 

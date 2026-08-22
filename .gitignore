@@ -6,3 +6,5 @@ FILETREE.md
 AGENT.md
 test/.build/
 *.tmp
+.superpowers/
+docs/superpowers/

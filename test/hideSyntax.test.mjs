@@ -16,6 +16,7 @@ import assert from "node:assert/strict";
 import { EditorState, RangeSetBuilder } from "@codemirror/state";
 import { Decoration } from "@codemirror/view";
 import { findMarkerRanges } from "./.build/markerRanges.js";
+import { findFencedLines } from "./.build/codeFence.js";
 
 const hidden = Decoration.replace({});
 
@@ -23,7 +24,9 @@ const hidden = Decoration.replace({});
 function build(doc) {
 	const state = EditorState.create({ doc });
 	const builder = new RangeSetBuilder();
+	const fencedLines = findFencedLines(state.doc);
 	for (let n = 1; n <= state.doc.lines; n++) {
+		if (fencedLines.has(n)) continue;
 		const line = state.doc.line(n);
 		for (const r of findMarkerRanges(line.text, line.from)) {
 			builder.add(r.from, r.to, hidden);
@@ -78,19 +81,21 @@ test("every range stays inside its own line", () => {
 });
 
 test("code fence contents produce no ranges", () => {
+	// build() now consults findFencedLines before scanning each line, so the
+	// fence's own line-at-a-time blindness (findMarkerRanges has no block
+	// context) no longer reaches the decorations that actually render.
 	const doc = ["```", "**this is not bold**", "```"].join("\n");
-	const { state } = build(doc);
-	// The fence lines are skipped by the scanner. The line between them is not
-	// a fence itself, so it is still scanned — this test records that known
-	// limitation rather than asserting it is correct.
-	const inner = state.doc.line(2);
-	const ranges = findMarkerRanges(inner.text, inner.from);
-	assert.equal(
-		ranges.length,
-		2,
-		"KNOWN LIMITATION: content inside a fence is still scanned, because the " +
-		"scanner sees one line at a time and has no block context"
-	);
+	const { set } = build(doc);
+	assert.equal(countRanges(set), 0, "content inside a fence must not be hidden");
+});
+
+test("underscores inside a fenced code block are not hidden", () => {
+	// The reported bug: `_VARIABLE_A_` on its own line inside a fence used to
+	// have its underscores paired as emphasis and hidden, rendering as
+	// "VARIABLEA_" instead of the literal code.
+	const doc = ["```", "_VARIABLE_A_", "```"].join("\n");
+	const { set } = build(doc);
+	assert.equal(countRanges(set), 0);
 });
 
 test("an empty document is fine", () => {

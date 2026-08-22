@@ -52,6 +52,8 @@ const en = {
     "menu.attachment": "Insert attachment",
     "menu.table": "Table",
     "menu.today": "Today",
+    "menu.yesterday": "Yesterday",
+    "menu.tomorrow": "Tomorrow",
     "menu.time": "Current time",
     "menu.footnote": "Footnote",
     "menu.comment": "Comment",

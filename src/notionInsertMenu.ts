@@ -281,8 +281,18 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
 
     private getTextItems(isFiltering: boolean): InsertItem[] {
         const items: InsertItem[] = [
+            // "check list" with the space is in the keywords deliberately: the
+            // matcher tests the query as one substring, so a two-word query
+            // matches nothing unless a keyword contains the space too.
+            { id: "todo", label: t("menu.todo"), icon: "check-square", keywords: ["todo", "task", "checkbox", "checklist", "check list", "- [ ]"], action: () => this.insert("todo") },
             { id: "code", label: t("menu.code"), icon: "code", keywords: ["```"], action: () => this.insert("code") },
             { id: "math", label: t("menu.math"), icon: "sigma", keywords: ["latex", "$$"], action: () => this.insert("math") },
+            // Lives here, not in getInlineItems(), so it renders before "Table
+            // of contents" (below, in this same section). Both rows match the
+            // query "table" — whichever comes first in render order is what
+            // Enter takes, and a table insert being pre-empted by a table of
+            // contents is the bug this position prevents.
+            { id: "table", label: t("menu.table"), icon: "table", action: () => this.insert("table") },
             { id: "divider", label: t("menu.divider"), icon: "minus", keywords: ["hr", "---", "rule", "separator", "line", "break"], action: () => this.insert("divider") },
             { id: "toc", label: t("menu.toc"), icon: "list-ordered", keywords: ["toc", "contents", "outline", "headings", "index"], action: () => this.insertTableOfContents() },
         ];
@@ -305,13 +315,14 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
             { id: "ext-link", label: t("menu.extLink"), icon: "link-2", keywords: ["url"], action: () => this.insert("ext-link") },
             { id: "image", label: t("menu.image"), icon: "image", keywords: ["photo", "picture"], action: () => this.openImagePicker() },
             { id: "attachment", label: t("menu.attachment"), icon: "paperclip", keywords: ["file", "pdf", "upload"], action: () => this.openAttachmentPicker() },
-            { id: "table", label: t("menu.table"), icon: "table", action: () => this.insert("table") },
         ];
     }
 
     private getMetaItems(): InsertItem[] {
         return [
             { id: "today", label: t("menu.today"), icon: "calendar", keywords: ["date"], action: () => this.insert("today") },
+            { id: "yesterday", label: t("menu.yesterday"), icon: "calendar-minus", keywords: ["date", "yesterday"], action: () => this.insert("yesterday") },
+            { id: "tomorrow", label: t("menu.tomorrow"), icon: "calendar-plus", keywords: ["date", "tomorrow"], action: () => this.insert("tomorrow") },
             { id: "time", label: t("menu.time"), icon: "clock", action: () => this.insert("time") },
             { id: "footnote", label: t("menu.footnote"), icon: "hash", action: () => this.insert("footnote") },
             { id: "comment", label: t("menu.comment"), icon: "message-square", action: () => this.insert("comment") },
