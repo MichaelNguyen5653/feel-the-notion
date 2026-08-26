@@ -7,7 +7,21 @@ import {
     pickIndent,
     detectIndentUnit,
 } from "./dragRange";
+import { FrameScheduler } from "./frameScheduler";
 import { planBlockMove, MoveSource } from "./planMove";
+
+/**
+ * Editor geometry a drag needs but does not itself change.
+ *
+ * The content's left edge, its width and the character width are fixed for the
+ * length of a drag — only scrolling or resizing can move them. Reading them once
+ * keeps the per-frame work down to the two line probes that genuinely vary.
+ */
+interface DragMetrics {
+    contentLeft: number;
+    contentWidth: number;
+    columnPx: number;
+}
 
 export class DragManager {
     private ghostEl: HTMLElement | null = null;
@@ -19,19 +33,30 @@ export class DragManager {
     private currentTargetIndent = 0;
     /** Indent levels legal at the current drop point. One entry = no choice. */
     private currentAllowedIndents: number[] = [0];
+    /** Line the cached indents were computed for; null means they are stale. */
+    private indentsForLine: number | null = null;
     private indentUnit = 4;
+    private metrics: DragMetrics | null = null;
     private ownerDocument: Document;
     private ownerWindow: Window;
+    private scheduler: FrameScheduler;
     private onDragEnd?: () => void;
+
+    private onViewportChange = () => {
+        this.metrics = null;
+    };
 
     constructor(private plugin: NotionBlock, private view: EditorView) {
         this.ownerDocument = view.dom.ownerDocument;
         this.ownerWindow = this.ownerDocument.defaultView ?? activeWindow;
+        this.scheduler = new FrameScheduler(this.ownerWindow);
     }
 
     startDrag(lineNo: number, event: MouseEvent, onDragEnd?: () => void) {
         this.onDragEnd = onDragEnd;
         this.isDragging = true;
+        this.metrics = null;
+        this.indentsForLine = null;
 
         const doc = this.view.state.doc;
 
@@ -77,24 +102,37 @@ export class DragManager {
 
         this.ownerDocument.addEventListener("mousemove", this.onMouseMove);
         this.ownerDocument.addEventListener("mouseup", this.onMouseUp);
+        this.view.scrollDOM.addEventListener("scroll", this.onViewportChange, { passive: true });
+        this.ownerWindow.addEventListener("resize", this.onViewportChange);
         
         // Prevent text selection during drag
         this.ownerDocument.body.addClass("is-dragging-block");
     }
 
+    /**
+     * Records where the pointer is and defers the work to the next frame.
+     *
+     * A mouse reports movement several times per painted frame, and every extra
+     * report used to repeat the full measure-and-position pass. Only the newest
+     * position matters, so keeping it and running once per frame drops the work
+     * to what the screen can actually show.
+     */
     private onMouseMove = (event: MouseEvent) => {
         if (!this.isDragging) return;
-
-        this.updateGhostPosition(event.clientX, event.clientY);
-
-        const pos = this.view.posAtCoords({ x: event.clientX, y: event.clientY });
-        if (pos !== null) {
-            const line = this.view.state.doc.lineAt(pos);
-            this.updateIndicator(line.number, event.clientY, event.clientX);
-        }
+        const x = event.clientX;
+        const y = event.clientY;
+        this.scheduler.schedule(() => this.processMove(x, y));
     };
 
-    private onMouseUp = (_event: MouseEvent) => {
+    private onMouseUp = (event: MouseEvent) => {
+        // The final pointer move may still be sitting in a frame that will never
+        // get to run, which would drop the block at wherever the pointer was one
+        // frame ago. Resolve the drop point from where the button was actually
+        // released, then apply.
+        if (this.isDragging) {
+            this.scheduler.cancel();
+            this.processMove(event.clientX, event.clientY);
+        }
         this.stopDrag();
     };
 
@@ -114,6 +152,10 @@ export class DragManager {
     private stopDrag() {
         if (!this.isDragging) return;
 
+        // Before anything else: a frame queued from the last pointer move would
+        // otherwise measure against a document the drop is about to rewrite.
+        this.scheduler.cancel();
+
         if (this.startBlock !== null && this.currentTargetLine !== null) {
             this.moveBlock(this.startBlock, this.currentTargetLine);
         }
@@ -121,6 +163,8 @@ export class DragManager {
         this.isDragging = false;
         this.startBlock = null;
         this.currentTargetLine = null;
+        this.indentsForLine = null;
+        this.metrics = null;
 
         if (this.ghostEl) {
             this.ghostEl.remove();
@@ -133,11 +177,112 @@ export class DragManager {
 
         this.ownerDocument.removeEventListener("mousemove", this.onMouseMove);
         this.ownerDocument.removeEventListener("mouseup", this.onMouseUp);
+        this.view.scrollDOM.removeEventListener("scroll", this.onViewportChange);
+        this.ownerWindow.removeEventListener("resize", this.onViewportChange);
         this.ownerDocument.body.removeClass("is-dragging-block");
 
         // Let the handle drop its cached line number — the drag has rewritten
         // the document, so that number no longer means what it did.
         this.onDragEnd?.();
+    }
+
+    private readMetrics(): DragMetrics {
+        if (this.metrics) return this.metrics;
+
+        const contentRect = this.view.contentDOM.getBoundingClientRect();
+        this.metrics = {
+            contentLeft: contentRect.left,
+            contentWidth: this.view.contentDOM.clientWidth,
+            columnPx: this.view.defaultCharacterWidth || 8,
+        };
+        return this.metrics;
+    }
+
+    /**
+     * One frame of drag feedback: measure everything, then paint everything.
+     *
+     * The ordering is the point. Positioning the ghost is a style write, and a
+     * write invalidates layout — so the posAtCoords and coordsAtPos probes that
+     * used to follow it each forced the browser to recompute layout before it
+     * could answer. Taking every measurement first means at most one layout pass
+     * per frame instead of one per probe.
+     */
+    private processMove(mouseX: number, mouseY: number) {
+        if (!this.isDragging) return;
+
+        // ---- READS --------------------------------------------------------
+        const m = this.readMetrics();
+        const pos = this.view.posAtCoords({ x: mouseX, y: mouseY });
+
+        let paint: { top: number; left: number; width: number; hasChoice: boolean } | null = null;
+
+        if (pos !== null) {
+            try {
+                const line = this.view.state.doc.lineAt(pos);
+                const coords = this.view.coordsAtPos(line.from);
+                const endCoords = coords ? this.view.coordsAtPos(line.to) : null;
+
+                if (coords) {
+                    // ---- COMPUTE ------------------------------------------
+                    let top = coords.top;
+                    let targetLine = line.number;
+
+                    if (endCoords) {
+                        const lineBottom = endCoords.bottom;
+                        const midPoint = coords.top + (lineBottom - coords.top) / 2;
+                        if (mouseY > midPoint) {
+                            top = lineBottom;
+                            targetLine = line.number + 1;
+                        }
+                    }
+
+                    this.currentTargetLine = targetLine;
+
+                    // Horizontal drag position chooses the drop depth, snapped to
+                    // the levels that are actually legal here. Where only one is
+                    // legal there is nothing to choose and the indicator sits flush,
+                    // which is the behaviour in a document with no lists.
+                    //
+                    // The legal set is a document walk, and the document cannot
+                    // change mid-drag, so it is recomputed only when the drop
+                    // point moves to a different line.
+                    if (this.indentsForLine !== targetLine) {
+                        this.currentAllowedIndents = allowedIndents(
+                            this.view.state.doc,
+                            targetLine,
+                            this.indentUnit
+                        );
+                        this.indentsForLine = targetLine;
+                    }
+
+                    const desired = Math.max(0, Math.round((mouseX - m.contentLeft) / m.columnPx));
+                    this.currentTargetIndent = pickIndent(this.currentAllowedIndents, desired);
+
+                    const offsetPx = this.currentTargetIndent * m.columnPx;
+                    paint = {
+                        top,
+                        left: coords.left + offsetPx,
+                        width: Math.max(40, m.contentWidth - offsetPx),
+                        hasChoice: this.currentAllowedIndents.length > 1,
+                    };
+                }
+            } catch {
+                // Line doesn't exist — leave the indicator where it was.
+            }
+        }
+
+        // ---- WRITES -------------------------------------------------------
+        this.updateGhostPosition(mouseX, mouseY);
+
+        if (paint && this.indicatorEl) {
+            this.indicatorEl.toggleClass("is-indent-selectable", paint.hasChoice);
+            this.indicatorEl.setCssStyles({
+                top: `${paint.top}px`,
+                left: `${paint.left}px`,
+                width: `${paint.width}px`,
+                display: "block"
+            });
+        }
     }
 
     private updateGhostPosition(x: number, y: number) {
@@ -146,64 +291,6 @@ export class DragManager {
                 left: `${x + 10}px`,
                 top: `${y + 10}px`
             });
-        }
-    }
-
-    private updateIndicator(lineNo: number, mouseY: number, mouseX: number) {
-        if (!this.indicatorEl) return;
-
-        try {
-            const line = this.view.state.doc.line(lineNo);
-            const coords = this.view.coordsAtPos(line.from);
-            
-            if (coords) {
-                // Use coordsAtPos for the end of line to determine full line height
-                const endCoords = this.view.coordsAtPos(line.to);
-                
-                let top = coords.top;
-                let targetLine = lineNo;
-
-                if (endCoords) {
-                    const lineBottom = endCoords.bottom;
-                    const midPoint = coords.top + (lineBottom - coords.top) / 2;
-                    if (mouseY > midPoint) {
-                        top = lineBottom;
-                        targetLine = lineNo + 1;
-                    } else {
-                        top = coords.top;
-                        targetLine = lineNo;
-                    }
-                }
-
-                this.currentTargetLine = targetLine;
-
-                // Horizontal drag position chooses the drop depth, snapped to
-                // the levels that are actually legal here. Where only one is
-                // legal there is nothing to choose and the indicator sits flush,
-                // which is the behaviour in a document with no lists.
-                const contentRect = this.view.contentDOM.getBoundingClientRect();
-                const columnPx = this.view.defaultCharacterWidth || 8;
-                this.currentAllowedIndents = allowedIndents(
-                    this.view.state.doc,
-                    targetLine,
-                    this.indentUnit
-                );
-                const desired = Math.max(0, Math.round((mouseX - contentRect.left) / columnPx));
-                this.currentTargetIndent = pickIndent(this.currentAllowedIndents, desired);
-
-                const offsetPx = this.currentTargetIndent * columnPx;
-                const hasChoice = this.currentAllowedIndents.length > 1;
-                this.indicatorEl.toggleClass("is-indent-selectable", hasChoice);
-
-                this.indicatorEl.setCssStyles({
-                    top: `${top}px`,
-                    left: `${coords.left + offsetPx}px`,
-                    width: `${Math.max(40, this.view.contentDOM.clientWidth - offsetPx)}px`,
-                    display: "block"
-                });
-            }
-        } catch {
-            // Ignore if line doesn't exist
         }
     }
 

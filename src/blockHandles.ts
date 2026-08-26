@@ -8,7 +8,30 @@ import NotionBlock from "./main";
 import { closeNotionBlockActionMenus, showNotionBlockActionMenu } from "./notionActionMenu";
 import { closeNotionBlockInsertMenus, showNotionBlockInsertMenu } from "./notionInsertMenu";
 import { DragManager } from "./dragDrop";
+import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
+
+/**
+ * Editor geometry that a pointer move needs but cannot change.
+ *
+ * Every field here comes from a layout read — getBoundingClientRect, offsetLeft,
+ * scrollTop. Reading one costs nothing on its own, but reading one AFTER a style
+ * write forces the browser to recompute layout synchronously before it can
+ * answer. Gathering them into a single struct lets the hot path take them all at
+ * once, and hold them until something actually invalidates them.
+ */
+interface Metrics {
+    viewTop: number;
+    viewLeft: number;
+    viewWidth: number;
+    viewHeight: number;
+    /** Viewport-space left edge of the content, for probing a line by its Y. */
+    contentLeft: number;
+    /** Offset of the content inside the scroller, for placing the handle. */
+    contentOffsetLeft: number;
+    scrollerTop: number;
+    scrollTop: number;
+}
 
 export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromClass(class {
     handleEl: HTMLElement | null = null;
@@ -21,9 +44,43 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     ownerWindow: Window;
     isMouseOverHandle = false;
 
+    /** Collapses a burst of pointer moves into one pass per frame. */
+    scheduler: FrameScheduler;
+
+    /**
+     * Viewport-space Y span of the hovered line, including its wrapped rows.
+     *
+     * Most pointer moves stay inside the line they are already on. Without this
+     * every one of them ran a posAtCoords probe purely to rediscover a line
+     * number that had not changed. Held in viewport coordinates so it can be
+     * compared against clientY directly, which means scrolling invalidates it.
+     */
+    hoveredBand: { top: number; bottom: number } | null = null;
+
+    metrics: Metrics | null = null;
+
+    /** The handle is a fixed size in CSS, so this is read once and kept. */
+    handleHeight = 0;
+
+    /** Last value written to the "+" button, so an unchanged setting writes nothing. */
+    plusHandleShown: boolean | null = null;
+
+    /** Held directly: CodeMirror's destroy() is passed no view to ask for it. */
+    scrollEl: HTMLElement;
+
+    onScroll = () => this.invalidateMetrics();
+    onResize = () => this.invalidateMetrics();
+
     constructor(view: EditorView) {
         this.ownerWindow = view.dom.ownerDocument.defaultView ?? activeWindow;
+        this.scheduler = new FrameScheduler(this.ownerWindow);
+        this.scrollEl = view.scrollDOM;
         this.createHandle(view);
+
+        // Both cached rects and the hovered band are viewport-relative, so they
+        // stop being true the moment the editor scrolls or the window resizes.
+        view.scrollDOM.addEventListener("scroll", this.onScroll, { passive: true });
+        this.ownerWindow.addEventListener("resize", this.onResize);
     }
 
     createHandle(view: EditorView) {
@@ -80,6 +137,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                     // line number is meaningless. Clearing it forces the next
                     // pointer move to resolve the line afresh.
                     this.hoveredLine = null;
+                    this.hoveredBand = null;
                     this.isMouseOverHandle = false;
                 });
             }, 150);
@@ -137,73 +195,140 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
 
     }
 
+    /** Drops cached geometry so the next read takes it afresh. */
+    invalidateMetrics() {
+        this.metrics = null;
+        this.hoveredBand = null;
+    }
+
+    /**
+     * Cached editor geometry, measured only when the cache is cold.
+     *
+     * Every read is taken in one uninterrupted run. Interleaving a style write
+     * would force a separate layout pass for each read that followed it.
+     */
+    readMetrics(view: EditorView): Metrics {
+        if (this.metrics) return this.metrics;
+
+        const viewRect = view.dom.getBoundingClientRect();
+        const contentRect = view.contentDOM.getBoundingClientRect();
+        const scrollerRect = view.scrollDOM.getBoundingClientRect();
+
+        this.metrics = {
+            viewTop: viewRect.top,
+            viewLeft: viewRect.left,
+            viewWidth: viewRect.width,
+            viewHeight: viewRect.height,
+            contentLeft: contentRect.left,
+            contentOffsetLeft: view.contentDOM.offsetLeft,
+            scrollerTop: scrollerRect.top,
+            scrollTop: view.scrollDOM.scrollTop,
+        };
+        return this.metrics;
+    }
+
     update(update: ViewUpdate) {
-        // Only update position on viewport changes or document changes if handle is visible
-        if ((update.docChanged || update.viewportChanged) && this.hoveredLine !== null) {
-            this.updatePosition(update.view);
+        // Any of these can move the line the handle is pinned to, so the cached
+        // rects and the hovered band both stop being trustworthy.
+        if (update.docChanged || update.viewportChanged || update.geometryChanged) {
+            this.invalidateMetrics();
+            if (this.hoveredLine !== null) {
+                this.updatePosition(update.view);
+            }
         }
     }
 
     updatePosition(view: EditorView) {
         if (this.hoveredLine === null || !this.handleEl) return;
 
-        // Re-read on every reposition rather than at construction: the plugin
-        // instance outlives a settings change, so a toggle applied once at
-        // startup would not take effect until the editor was rebuilt.
-        this.addButton?.toggle(plugin.settings.plusHandle);
-
         try {
             const line = view.state.doc.line(this.hoveredLine);
 
-            // Get accurate screen coordinates of the line
+            // ---- READS ----------------------------------------------------
+            // Everything measured here happens before the first write below.
+            // A write in the middle would force layout to be recomputed before
+            // each remaining read could be answered.
             const coords = view.coordsAtPos(line.from);
             if (!coords) return;
-            
-            const scrollerRect = view.scrollDOM.getBoundingClientRect();
-            
+
+            // The end of the line, so a wrapped paragraph's band covers all of
+            // its visual rows rather than only the first.
+            const endCoords = view.coordsAtPos(line.to);
+            const m = this.readMetrics(view);
+            if (this.handleHeight === 0) {
+                this.handleHeight = this.handleEl.offsetHeight || 24;
+            }
+
             // Calculate top relative to scrollDOM
-            // (coords.top - scrollerRect.top) is the viewport-relative offset
-            // We add scrollDOM.scrollTop because handleEl is a child of scrollDOM
-            let top = (coords.top - scrollerRect.top) + view.scrollDOM.scrollTop;
-            
+            // (coords.top - scrollerTop) is the viewport-relative offset
+            // We add scrollTop because handleEl is a child of scrollDOM
+            let top = (coords.top - m.scrollerTop) + m.scrollTop;
+
             // Centering logic:
             // Adjust to the vertical center of the first visual line
             const lineHeight = coords.bottom - coords.top;
-            const handleHeight = this.handleEl.offsetHeight || 24;
-            top += (lineHeight - handleHeight) / 2;
-            
+            top += (lineHeight - this.handleHeight) / 2;
+
             // Calculate left position based on contentDOM offset
-            const left = view.contentDOM.offsetLeft - 52; 
-            
+            const left = m.contentOffsetLeft - 52;
+
+            this.hoveredBand = { top: coords.top, bottom: (endCoords ?? coords).bottom };
+
+            // ---- WRITES ---------------------------------------------------
+            // Re-read the setting on every reposition rather than at
+            // construction: the plugin instance outlives a settings change, so
+            // a toggle applied once at startup would not take effect until the
+            // editor was rebuilt. Only touch the DOM when it actually differs.
+            if (this.plusHandleShown !== plugin.settings.plusHandle) {
+                this.plusHandleShown = plugin.settings.plusHandle;
+                this.addButton?.toggle(plugin.settings.plusHandle);
+            }
+
             this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });
         } catch {
             this.hideHandle();
         }
     }
 
+    /**
+     * Queues a pointer move for the next frame.
+     *
+     * Only the coordinates and the hit-test result are kept, not the event: the
+     * hit test walks the DOM tree rather than measuring it, so it is cheap to do
+     * now and would be wrong to defer — by the next frame the pointer may have
+     * left the element the event was actually about.
+     */
     handleMouseMove(view: EditorView, event: MouseEvent) {
-        const rect = view.dom.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const clientX = event.clientX;
+        const clientY = event.clientY;
+        const overHandle = !!(event.target as HTMLElement).closest(".block-handle-wrap");
+
+        this.scheduler.schedule(() => this.processMouseMove(view, clientX, clientY, overHandle));
+    }
+
+    processMouseMove(view: EditorView, clientX: number, clientY: number, overHandle: boolean) {
+        if (!this.handleEl) return;
+
+        const m = this.readMetrics(view);
+        const x = clientX - m.viewLeft;
+        const y = clientY - m.viewTop;
 
         // Detection range check - Expand left range to accommodate the handle
-        if (x < -100 || x > rect.width + 100 || y < 0 || y > rect.height) {
+        if (x < -100 || x > m.viewWidth + 100 || y < 0 || y > m.viewHeight) {
             this.handleMouseLeave();
             return;
         }
 
-        if ((event.target as HTMLElement).closest(".block-handle-wrap")) {
+        if (overHandle) {
             if (this.hideTimeout) {
                 this.ownerWindow.clearTimeout(this.hideTimeout);
                 this.hideTimeout = null;
             }
-            if (this.handleEl?.classList.contains("is-hidden")) {
+            if (this.handleEl.classList.contains("is-hidden")) {
                 this.handleEl.classList.remove("is-hidden");
                 // If it was fully nullified, try to recover the line from current Y
                 if (this.hoveredLine === null) {
-                    const contentRect = view.contentDOM.getBoundingClientRect();
-                    const targetX = contentRect.left + 5; 
-                    const pos = view.posAtCoords({ x: targetX, y: event.clientY });
+                    const pos = view.posAtCoords({ x: m.contentLeft + 5, y: clientY });
                     if (pos !== null) {
                         try {
                             this.hoveredLine = view.state.doc.lineAt(pos).number;
@@ -217,11 +342,26 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             return;
         }
 
+        const isHidden = this.handleEl.classList.contains("is-hidden");
+
+        // The pointer has not left the line it was already on, and the handle is
+        // already parked there. Nothing to measure and nothing to move.
+        if (
+            !isHidden &&
+            this.hoveredLine !== null &&
+            this.hoveredBand !== null &&
+            clientY >= this.hoveredBand.top &&
+            clientY < this.hoveredBand.bottom
+        ) {
+            if (this.hideTimeout) {
+                this.ownerWindow.clearTimeout(this.hideTimeout);
+                this.hideTimeout = null;
+            }
+            return;
+        }
+
         // Use a fixed X point inside content to find the line at current Y
-        const contentRect = view.contentDOM.getBoundingClientRect();
-        const targetX = contentRect.left + 5; 
-        const pos = view.posAtCoords({ x: targetX, y: event.clientY });
-        
+        const pos = view.posAtCoords({ x: m.contentLeft + 5, y: clientY });
         if (pos === null) return;
 
         try {
@@ -235,10 +375,9 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // line with that same number left this guard satisfied and the
             // handle stayed hidden until the pointer crossed into a
             // differently-numbered line.
-            const isHidden = this.handleEl?.classList.contains("is-hidden") ?? false;
             if (this.hoveredLine !== line.number || isHidden) {
                 this.hoveredLine = line.number;
-                this.handleEl?.classList.remove("is-hidden");
+                this.handleEl.classList.remove("is-hidden");
                 this.updatePosition(view);
             }
 
@@ -252,6 +391,11 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     }
 
     handleMouseLeave() {
+        // A pointer move queued for the next frame would run after this one and
+        // clear the hide timeout set below, leaving the handle stranded on
+        // screen after the pointer had already left the editor.
+        this.scheduler.cancel();
+
         if (this.hideTimeout) this.ownerWindow.clearTimeout(this.hideTimeout);
         
         this.hideTimeout = this.ownerWindow.setTimeout(() => {
@@ -260,12 +404,14 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 return;
             }
             this.hoveredLine = null;
+            this.hoveredBand = null;
             this.handleEl?.classList.add("is-hidden");
         }, plugin.settings.hideDelay);
     }
 
     hideHandle() {
         this.hoveredLine = null;
+        this.hoveredBand = null;
         if (this.handleEl) {
             this.handleEl.classList.add("is-hidden");
         }
@@ -278,10 +424,15 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     destroy() {
         closeNotionBlockActionMenus();
         closeNotionBlockInsertMenus();
+        // A queued frame closes over the view, so letting it fire after teardown
+        // would measure and position against a detached editor.
+        this.scheduler.cancel();
         if (this.hideTimeout) {
             this.ownerWindow.clearTimeout(this.hideTimeout);
             this.hideTimeout = null;
         }
+        this.scrollEl.removeEventListener("scroll", this.onScroll);
+        this.ownerWindow.removeEventListener("resize", this.onResize);
         // The drag manager's listeners are on the document, not on the view, so
         // they outlive the view unless it says so explicitly.
         this.dragManager?.destroy();

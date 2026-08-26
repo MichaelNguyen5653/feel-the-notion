@@ -22,6 +22,17 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.4.0
+
+Bug fixes and improvements:
+
+- Dragging blocks is smoother. Pointer movement is now handled once per frame rather than once per mouse event, so a fast drag no longer does the same measuring several times between two redraws.
+- Hovering the gutter costs less. The handle measures the line only when the pointer actually crosses into a different one, instead of re-checking on every movement.
+- Measuring and repositioning were interleaved, which forced the browser to recalculate layout repeatedly within a single mouse event. Everything is now measured first and drawn afterwards.
+- Editor geometry that cannot change mid-drag is read once instead of on every movement, and the list of legal drop depths is recalculated only when the drop point moves to a different line.
+- Releasing the mouse at the end of a fast drag drops the block where the pointer actually was, not where it had been a moment earlier.
+- The hover handle no longer occasionally stays on screen after the pointer has left the editor.
+
 ### 0.3.0
 
 **Mobile support coming!**

@@ -14,6 +14,7 @@ import esbuild from "esbuild";
 await esbuild.build({
 	entryPoints: [
 		"src/markerRanges.ts",
+		"src/frameScheduler.ts",
 		"src/blockSelection.ts",
 		"src/dragRange.ts",
 		"src/planMove.ts",
