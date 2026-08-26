@@ -71,6 +71,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     /** Last side written to the wrapper, so an unchanged setting writes nothing. */
     sideShown: "left" | "right" | null = null;
 
+    /**
+     * Last observed value of `handleAlwaysVisible`, so `update()` can detect
+     * the true -> false transition and hide a handle that has nothing left
+     * pinning it on screen.
+     */
+    alwaysVisibleShown: boolean | null = null;
+
     /** Held directly: CodeMirror's destroy() is passed no view to ask for it. */
     scrollEl: HTMLElement;
 
@@ -82,6 +89,14 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         this.scheduler = new FrameScheduler(this.ownerWindow);
         this.scrollEl = view.scrollDOM;
         this.createHandle(view);
+
+        // ViewPlugin.update() does not fire at construction, so without this a
+        // freshly opened pane in always-visible mode would show no handle
+        // until a selection, doc, or viewport change happened.
+        this.alwaysVisibleShown = plugin.settings.handleAlwaysVisible;
+        if (plugin.settings.handleAlwaysVisible) {
+            this.followCaret(view);
+        }
 
         // Both cached rects and the hovered band are viewport-relative, so they
         // stop being true the moment the editor scrolls or the window resizes.
@@ -244,11 +259,22 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             }
         }
 
+        // saveSettings() calls app.workspace.updateOptions(), which reconfigures
+        // the editor and fires update() — the only place this transition is
+        // observable, since the settings pane isn't over the editor to trigger
+        // a mouse event. Without this the handle stayed parked at its last
+        // caret position after the toggle was switched off.
+        if (this.alwaysVisibleShown && !plugin.settings.handleAlwaysVisible) {
+            this.hideHandle();
+        }
+        this.alwaysVisibleShown = plugin.settings.handleAlwaysVisible;
+
         if (!plugin.settings.handleAlwaysVisible) return;
 
         // In always-visible mode the caret, not the pointer, decides where the
-        // handle lives. Also runs when nothing changed but the handle has never
-        // been placed, which is what puts it on screen at startup.
+        // handle lives. Also runs when the handle isn't currently placed
+        // anywhere, so re-enabling the setting immediately puts it back on the
+        // caret's block instead of waiting for the next selection or doc change.
         if (update.selectionSet || update.docChanged || this.hoveredLine === null) {
             this.followCaret(update.view);
         }
