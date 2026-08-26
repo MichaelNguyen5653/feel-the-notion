@@ -17,6 +17,7 @@ await esbuild.build({
 		"src/frameScheduler.ts",
 		"src/blockSelection.ts",
 		"src/dragRange.ts",
+		"src/handleZone.ts",
 		"src/planMove.ts",
 		"src/blockCommands.ts",
 		"src/insertPlan.ts",
