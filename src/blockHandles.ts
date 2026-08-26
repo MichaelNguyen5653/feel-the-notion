@@ -10,6 +10,7 @@ import { closeNotionBlockInsertMenus, showNotionBlockInsertMenu } from "./notion
 import { DragManager } from "./dragDrop";
 import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
+import { handleOffsetX, isInsideHandleZone } from "./handleZone";
 
 /**
  * Editor geometry that a pointer move needs but cannot change.
@@ -27,6 +28,8 @@ interface Metrics {
     viewHeight: number;
     /** Viewport-space left edge of the content, for probing a line by its Y. */
     contentLeft: number;
+    /** Width of the content, for placing a right-side handle. */
+    contentWidth: number;
     /** Offset of the content inside the scroller, for placing the handle. */
     contentOffsetLeft: number;
     scrollerTop: number;
@@ -64,6 +67,9 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
 
     /** Last value written to the "+" button, so an unchanged setting writes nothing. */
     plusHandleShown: boolean | null = null;
+
+    /** Last side written to the wrapper, so an unchanged setting writes nothing. */
+    sideShown: "left" | "right" | null = null;
 
     /** Held directly: CodeMirror's destroy() is passed no view to ask for it. */
     scrollEl: HTMLElement;
@@ -220,6 +226,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             viewWidth: viewRect.width,
             viewHeight: viewRect.height,
             contentLeft: contentRect.left,
+            contentWidth: contentRect.width,
             contentOffsetLeft: view.contentDOM.offsetLeft,
             scrollerTop: scrollerRect.top,
             scrollTop: view.scrollDOM.scrollTop,
@@ -235,6 +242,15 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             if (this.hoveredLine !== null) {
                 this.updatePosition(update.view);
             }
+        }
+
+        if (!plugin.settings.handleAlwaysVisible) return;
+
+        // In always-visible mode the caret, not the pointer, decides where the
+        // handle lives. Also runs when nothing changed but the handle has never
+        // been placed, which is what puts it on screen at startup.
+        if (update.selectionSet || update.docChanged || this.hoveredLine === null) {
+            this.followCaret(update.view);
         }
     }
 
@@ -270,7 +286,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             top += (lineHeight - this.handleHeight) / 2;
 
             // Calculate left position based on contentDOM offset
-            const left = m.contentOffsetLeft - 52;
+            const left = handleOffsetX(m, plugin.settings.handleSide);
 
             this.hoveredBand = { top: coords.top, bottom: (endCoords ?? coords).bottom };
 
@@ -282,6 +298,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             if (this.plusHandleShown !== plugin.settings.plusHandle) {
                 this.plusHandleShown = plugin.settings.plusHandle;
                 this.addButton?.toggle(plugin.settings.plusHandle);
+            }
+
+            if (this.sideShown !== plugin.settings.handleSide) {
+                this.sideShown = plugin.settings.handleSide;
+                // Reversing the row keeps the grip nearest the text on both
+                // sides, so the button under the pointer is the same one.
+                this.handleEl.classList.toggle("is-right", this.sideShown === "right");
             }
 
             this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });
@@ -313,8 +336,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         const x = clientX - m.viewLeft;
         const y = clientY - m.viewTop;
 
-        // Detection range check - Expand left range to accommodate the handle
-        if (x < -100 || x > m.viewWidth + 100 || y < 0 || y > m.viewHeight) {
+        // Asymmetric on purpose: the allowance belongs on the side the handle
+        // is actually drawn on. A symmetric test was simultaneously too mean
+        // there and pointless on the empty side.
+        if (!isInsideHandleZone(m, x, y, plugin.settings.handleSide)) {
             this.handleMouseLeave();
             return;
         }
@@ -391,13 +416,17 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     }
 
     handleMouseLeave() {
+        // Pinned to the caret rather than the pointer: there is no such thing
+        // as leaving.
+        if (plugin.settings.handleAlwaysVisible) return;
+
         // A pointer move queued for the next frame would run after this one and
         // clear the hide timeout set below, leaving the handle stranded on
         // screen after the pointer had already left the editor.
         this.scheduler.cancel();
 
         if (this.hideTimeout) this.ownerWindow.clearTimeout(this.hideTimeout);
-        
+
         this.hideTimeout = this.ownerWindow.setTimeout(() => {
             // Check if mouse is actually over the handle or we are still hovering
             if (this.isMouseOverHandle || this.handleEl?.matches(":hover")) {
@@ -407,6 +436,25 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             this.hoveredBand = null;
             this.handleEl?.classList.add("is-hidden");
         }, plugin.settings.hideDelay);
+    }
+
+    /**
+     * Parks the handle on the caret's block.
+     *
+     * Only used in always-visible mode. Hover still moves the handle there,
+     * so this is what puts it somewhere sensible when the pointer is nowhere
+     * near the editor: on the block being edited.
+     */
+    followCaret(view: EditorView) {
+        if (!this.handleEl) return;
+        try {
+            const line = view.state.doc.lineAt(view.state.selection.main.head);
+            this.hoveredLine = line.number;
+            this.handleEl.classList.remove("is-hidden");
+            this.updatePosition(view);
+        } catch {
+            // Position may be invalid mid-change; the next update retries.
+        }
     }
 
     hideHandle() {

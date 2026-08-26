@@ -17,6 +17,10 @@
     opacity: 1;
 }
 
+.block-handle-wrap.is-right {
+    flex-direction: row-reverse;
+}
+
 .block-handle-button {
     width: 20px;
     height: 20px;

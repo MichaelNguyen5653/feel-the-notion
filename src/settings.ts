@@ -7,6 +7,10 @@ export interface BlockPluginSettings {
     dragGranularity: 'line' | 'paragraph';
     hoverDelay: number;
     hideDelay: number;
+    /** Which edge of the content the hover handle is drawn beside. */
+    handleSide: 'left' | 'right';
+    /** Pin the handle to the caret's block so it never hides on pointer-out. */
+    handleAlwaysVisible: boolean;
     dateFormat: string;
     timeFormat: string;
     /** Hide markdown syntax markers on the active line too, killing reflow. */
@@ -34,7 +38,14 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // fragment of it and left the rest behind.
     dragGranularity: 'paragraph',
     hoverDelay: 0,
-    hideDelay: 200,
+    // Raised from 200ms. It has to cover the pointer's pause between leaving
+    // a line and arriving at the handle, which is what made the handle feel
+    // like it vanished the moment attention moved to it.
+    hideDelay: 300,
+    handleSide: 'left',
+    // OFF by default: it changes the handle from a hover affordance into a
+    // permanent one, which is a different editor to look at.
+    handleAlwaysVisible: false,
     dateFormat: 'YYYY-MM-DD',
     timeFormat: 'HH:mm',
     // OFF by default: it changes editing behaviour, not just appearance.
@@ -107,6 +118,28 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.hideDelay)
                 .onChange(async (value) => {
                     this.plugin.settings.hideDelay = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('settings.handleSide.name'))
+            .setDesc(t('settings.handleSide.desc'))
+            .addDropdown(dropdown => dropdown
+                .addOption('left', t('settings.handleSide.left'))
+                .addOption('right', t('settings.handleSide.right'))
+                .setValue(this.plugin.settings.handleSide)
+                .onChange(async (value: 'left' | 'right') => {
+                    this.plugin.settings.handleSide = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('settings.handleAlwaysVisible.name'))
+            .setDesc(t('settings.handleAlwaysVisible.desc'))
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.handleAlwaysVisible)
+                .onChange(async (value) => {
+                    this.plugin.settings.handleAlwaysVisible = value;
                     await this.plugin.saveSettings();
                 }));
 
