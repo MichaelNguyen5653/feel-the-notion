@@ -42,6 +42,7 @@ const zh: LocaleType = {
 
     "menu.paragraph": "文本",
     "menu.headings": "标题",
+    "menu.custom": "自定义",
     "menu.h1": "标题 1",
     "menu.h2": "标题 2",
     "menu.h3": "标题 3",

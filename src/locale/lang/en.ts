@@ -39,6 +39,7 @@ const en = {
     "menu.callout": "Callout",
 
     "menu.headings": "Headings",
+    "menu.custom": "Custom",
     "menu.paragraph": "Text",
     "menu.h1": "Heading 1",
     "menu.h2": "Heading 2",

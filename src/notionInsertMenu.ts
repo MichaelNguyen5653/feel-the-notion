@@ -12,6 +12,13 @@ import {
 import { matchesQuery } from "./slashTrigger";
 import { placeMenu, placeSubmenu } from "./menuPosition";
 import { t } from "./locale/helpers";
+import {
+    BUILTIN_ITEMS,
+    InsertSectionKey,
+    ResolvedItem,
+    groupBySection,
+    resolveMenuItems,
+} from "./insertRegistry";
 
 type InsertPage = "callout";
 type InsertAction = () => boolean | void;
@@ -230,6 +237,60 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         this.reposition();
     }
 
+    /** The section heading for a run of rows, or "" where the menu shows none. */
+    private sectionTitle(key: InsertSectionKey): string {
+        if (key === "headings") return t("menu.headings");
+        if (key === "insert") return t("menu.insert");
+        if (key === "custom") return t("menu.custom");
+        // "inline" and "meta" are separated by a rule rather than a heading,
+        // which is how they have always rendered.
+        return "";
+    }
+
+    /** Turns a registry row into a menu row, attaching its behaviour. */
+    private toInsertItem(resolved: ResolvedItem): InsertItem {
+        // A custom row is the user's own binding: it runs a command and has no
+        // submenu and no built-in action.
+        if (resolved.commandId) {
+            const commandId = resolved.commandId;
+            return {
+                id: resolved.id,
+                label: resolved.label,
+                icon: resolved.icon,
+                keywords: resolved.keywords,
+                action: () => this.runCommand(commandId),
+            };
+        }
+
+        // The callout row opens a submenu instead of inserting, and its icon
+        // tracks the default callout type rather than the table's placeholder.
+        if (resolved.id === "callout") {
+            return {
+                id: resolved.id,
+                label: resolved.label,
+                icon: this.getCalloutIcon("note"),
+                keywords: resolved.keywords,
+                page: "callout",
+            };
+        }
+
+        return {
+            id: resolved.id,
+            label: resolved.label,
+            icon: resolved.icon,
+            keywords: resolved.keywords,
+            action: this.builtinAction(resolved.id),
+        };
+    }
+
+    private builtinAction(id: string): InsertAction {
+        if (id === "toc") return () => this.insertTableOfContents();
+        if (id === "page") return () => this.createPage();
+        if (id === "image") return () => this.openImagePicker();
+        if (id === "attachment") return () => this.openAttachmentPicker();
+        return () => this.insert(id);
+    }
+
     private getSections(): InsertSection[] {
         // While filtering, the callout types are listed flat instead of behind
         // a submenu row. Typing "bug" should insert a bug callout, not offer a
@@ -237,15 +298,57 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         // of typing is to avoid reaching for it. They stay collapsed when there
         // is no query so the resting menu is not twelve rows longer.
         const isFiltering = this.query.trim().length > 0;
+        const settings = this.plugin.settings;
 
-        return [
-            { title: t("menu.headings"), items: this.getHeadingItems() },
-            { title: t("menu.insert"), items: this.getTextItems(isFiltering) },
-            { title: "", items: this.getInlineItems() },
-            { title: "", items: this.getMetaItems() },
+        const resolved = resolveMenuItems(
+            BUILTIN_ITEMS,
+            settings.insertCustom,
+            settings.insertOrder,
+            // The submenu parent is redundant while filtering, because the flat
+            // callout rows below carry every type it would have opened.
+            isFiltering ? [...settings.insertHidden, "callout"] : settings.insertHidden,
+            t
+        );
+
+        const sections: InsertSection[] = groupBySection(resolved).map((section) => ({
+            title: this.sectionTitle(section.sectionKey),
+            items: section.items.map((item) => this.toInsertItem(item)),
+        }));
+
+        sections.push(
             { title: isFiltering ? t("menu.callout") : "", items: isFiltering ? this.getCalloutItems() : [] },
-            { title: "", items: this.getDismissItems() },
-        ];
+            { title: "", items: this.getDismissItems() }
+        );
+
+        return sections;
+    }
+
+    /**
+     * Runs a user-bound Obsidian command.
+     *
+     * The menu closes and the typed `/query` is removed first, so the command
+     * acts on a document with no trigger text left in it. The removal and the
+     * command are two undo steps rather than one: the command dispatches its
+     * own transaction and there is no way to reach inside it. Undoing twice
+     * after a custom row is the accepted cost of binding arbitrary commands.
+     *
+     * app.commands is not in Obsidian's public types, hence the narrow cast.
+     */
+    private runCommand(commandId: string): boolean {
+        const remove = this.removeRange();
+        this.close();
+
+        if (remove) {
+            this.view.dispatch({ changes: { from: remove.from, to: remove.to, insert: "" } });
+        }
+
+        const commands = (this.plugin.app as unknown as {
+            commands?: { executeCommandById(id: string): boolean };
+        }).commands;
+        commands?.executeCommandById(commandId);
+
+        // Already closed above; returning true stops activateItem closing twice.
+        return true;
     }
 
     /**
@@ -267,66 +370,6 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
             // where it is, which is the whole point of the row.
             action: () => undefined,
         }];
-    }
-
-    private getHeadingItems(): InsertItem[] {
-        return [1, 2, 3, 4, 5].map((level): InsertItem => ({
-            id: `h${level}`,
-            label: t(`menu.h${level}`),
-            icon: `heading-${level}`,
-            keywords: [`h${level}`, `#${level}`, "title"],
-            action: () => this.insert(`h${level}`),
-        }));
-    }
-
-    private getTextItems(isFiltering: boolean): InsertItem[] {
-        const items: InsertItem[] = [
-            // "check list" with the space is in the keywords deliberately: the
-            // matcher tests the query as one substring, so a two-word query
-            // matches nothing unless a keyword contains the space too.
-            { id: "todo", label: t("menu.todo"), icon: "check-square", keywords: ["todo", "task", "checkbox", "checklist", "check list", "- [ ]"], action: () => this.insert("todo") },
-            { id: "code", label: t("menu.code"), icon: "code", keywords: ["```"], action: () => this.insert("code") },
-            { id: "math", label: t("menu.math"), icon: "sigma", keywords: ["latex", "$$"], action: () => this.insert("math") },
-            // Lives here, not in getInlineItems(), so it renders before "Table
-            // of contents" (below, in this same section). Both rows match the
-            // query "table" — whichever comes first in render order is what
-            // Enter takes, and a table insert being pre-empted by a table of
-            // contents is the bug this position prevents.
-            { id: "table", label: t("menu.table"), icon: "table", action: () => this.insert("table") },
-            { id: "divider", label: t("menu.divider"), icon: "minus", keywords: ["hr", "---", "rule", "separator", "line", "break"], action: () => this.insert("divider") },
-            { id: "toc", label: t("menu.toc"), icon: "list-ordered", keywords: ["toc", "contents", "outline", "headings", "index"], action: () => this.insertTableOfContents() },
-        ];
-        if (!isFiltering) {
-            items.push({
-                id: "callout",
-                label: t("menu.callout"),
-                icon: this.getCalloutIcon("note"),
-                keywords: ["admonition"],
-                page: "callout",
-            });
-        }
-        return items;
-    }
-
-    private getInlineItems(): InsertItem[] {
-        return [
-            { id: "page", label: t("menu.page"), icon: "file-plus", keywords: ["note", "subpage", "new"], action: () => this.createPage() },
-            { id: "link", label: t("menu.link"), icon: "link", keywords: ["wikilink", "[["], action: () => this.insert("link") },
-            { id: "ext-link", label: t("menu.extLink"), icon: "link-2", keywords: ["url"], action: () => this.insert("ext-link") },
-            { id: "image", label: t("menu.image"), icon: "image", keywords: ["photo", "picture"], action: () => this.openImagePicker() },
-            { id: "attachment", label: t("menu.attachment"), icon: "paperclip", keywords: ["file", "pdf", "upload"], action: () => this.openAttachmentPicker() },
-        ];
-    }
-
-    private getMetaItems(): InsertItem[] {
-        return [
-            { id: "today", label: t("menu.today"), icon: "calendar", keywords: ["date"], action: () => this.insert("today") },
-            { id: "yesterday", label: t("menu.yesterday"), icon: "calendar-minus", keywords: ["date", "yesterday"], action: () => this.insert("yesterday") },
-            { id: "tomorrow", label: t("menu.tomorrow"), icon: "calendar-plus", keywords: ["date", "tomorrow"], action: () => this.insert("tomorrow") },
-            { id: "time", label: t("menu.time"), icon: "clock", action: () => this.insert("time") },
-            { id: "footnote", label: t("menu.footnote"), icon: "hash", action: () => this.insert("footnote") },
-            { id: "comment", label: t("menu.comment"), icon: "message-square", action: () => this.insert("comment") },
-        ];
     }
 
     private renderSection(title: string, items: InsertItem[]): void {

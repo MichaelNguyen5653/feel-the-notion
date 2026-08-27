@@ -1,6 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import NotionBlock from './main';
 import { t } from './locale/helpers';
+import { CustomInsertItem } from './insertRegistry';
 
 export interface BlockPluginSettings {
     enabled: boolean;
@@ -29,6 +30,12 @@ export interface BlockPluginSettings {
     slashTrigger: string;
     /** Also open it mid-line, after a space, rather than on empty blocks only. */
     slashInline: boolean;
+    /** Insert-menu item ids in the order the user chose. Empty means the default order. */
+    insertOrder: string[];
+    /** Insert-menu item ids the user turned off. */
+    insertHidden: string[];
+    /** Insert-menu rows the user added, each bound to an Obsidian command. */
+    insertCustom: CustomInsertItem[];
     /** Write inserted attachments as embeds (a leading "!") rather than links. */
     embedAttachments: boolean;
 }
@@ -62,6 +69,12 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     slashMenu: true,
     slashTrigger: '/',
     slashInline: true,
+    // Empty rather than the built-in order: resolveMenuItems appends anything
+    // an order does not name, so an empty order IS the built-in order, and
+    // storing it explicitly would freeze out rows added by later versions.
+    insertOrder: [],
+    insertHidden: [],
+    insertCustom: [],
     // OFF by default, as asked: an attachment reads as a link unless it is
     // explicitly meant to render inline.
     embedAttachments: false,

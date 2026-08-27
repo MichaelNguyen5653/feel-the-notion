@@ -42,6 +42,7 @@ const zhTw: LocaleType = {
 
     "menu.paragraph": "文字",
     "menu.headings": "標題",
+    "menu.custom": "自訂",
     "menu.h1": "標題 1",
     "menu.h2": "標題 2",
     "menu.h3": "標題 3",
