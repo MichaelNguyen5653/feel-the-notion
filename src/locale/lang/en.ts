@@ -24,6 +24,7 @@ const en = {
     "handles.dragReorder": "Drag to reorder",
     "handles.switchToParagraph": "Switch to paragraph mode",
     "handles.switchToLine": "Switch to line mode",
+    "drag.blocks": "{n} blocks",
 
     "menu.turnInto": "Turn into",
     "menu.insert": "Insert",

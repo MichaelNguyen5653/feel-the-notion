@@ -84,7 +84,7 @@ export function isBlockStart(text: string): boolean {
  * as separate blocks — and dragging any one of them moved the whole run and
  * re-indented all of it, which is the bug this rule exists to fix.
  */
-function findBlockStart(doc: Text, lineNo: number): number {
+export function findBlockStart(doc: Text, lineNo: number): number {
 	let start = lineNo;
 	while (start > 1) {
 		const current = doc.line(start);
@@ -119,7 +119,7 @@ function findBlockStart(doc: Text, lineNo: number): number {
  * by its first line carried all three away, scattering two blocks the user
  * never touched.
  */
-function findBlockEnd(doc: Text, start: number): number {
+export function findBlockEnd(doc: Text, start: number): number {
 	const baseIndent = indentWidth(doc.line(start).text);
 	let end = start;
 
@@ -278,4 +278,52 @@ export function reindentBlock(text: string, fromIndent: number, toIndent: number
 			return " ".repeat(Math.max(0, current + delta)) + body;
 		})
 		.join("\n");
+}
+
+/** Characters of block text the drag ghost shows before truncating. */
+const GHOST_TEXT_LIMIT = 50;
+
+/**
+ * How many blocks a line span contains.
+ *
+ * Not a line count: a block owns everything nested under it, so a list item
+ * with two children is one block across three lines. Blank lines are
+ * boundaries and are not counted.
+ */
+export function countBlocks(doc: Text, firstLine: number, lastLine: number): number {
+	let count = 0;
+	let n = firstLine;
+
+	while (n <= lastLine) {
+		if (isBlank(doc.line(n).text)) {
+			n++;
+			continue;
+		}
+		const end = findBlockEnd(doc, findBlockStart(doc, n));
+		count++;
+		// max() guards against a walk that returns a line before the cursor,
+		// which would otherwise spin here forever.
+		n = Math.max(end, n) + 1;
+	}
+
+	return count;
+}
+
+/**
+ * What the drag ghost says.
+ *
+ * A multi-block drag used to show the first 50 characters of the blocks
+ * concatenated, which reads as run-together garbage and tells the user
+ * nothing about what they picked up. Above one block the count is the only
+ * useful thing to say.
+ *
+ * `blocksLabel` is passed in rather than looked up so this module stays free
+ * of the locale helper, which reads window.localStorage and does not exist
+ * under the test harness.
+ */
+export function describeDragGhost(text: string, blockCount: number, blocksLabel: string): string {
+	if (blockCount > 1) return blocksLabel.replace("{n}", String(blockCount));
+
+	const flat = text.trim();
+	return flat.length > GHOST_TEXT_LIMIT ? `${flat.slice(0, GHOST_TEXT_LIMIT)}...` : flat;
 }

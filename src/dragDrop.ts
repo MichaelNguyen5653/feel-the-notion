@@ -6,9 +6,12 @@ import {
     allowedIndents,
     pickIndent,
     detectIndentUnit,
+    countBlocks,
+    describeDragGhost,
 } from "./dragRange";
 import { FrameScheduler } from "./frameScheduler";
 import { planBlockMove, MoveSource } from "./planMove";
+import { t } from "./locale/helpers";
 
 /**
  * Editor geometry a drag needs but does not itself change.
@@ -91,7 +94,11 @@ export class DragManager {
         // Create ghost element
         this.ghostEl = this.ownerDocument.body.createDiv({
             cls: "block-drag-ghost",
-            text: text.slice(0, 50) + (text.length > 50 ? "..." : "")
+            text: describeDragGhost(
+                text,
+                countBlocks(doc, range.firstLine, range.lastLine),
+                t("drag.blocks")
+            ),
         });
         this.updateGhostPosition(event.clientX, event.clientY);
 

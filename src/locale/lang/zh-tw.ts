@@ -26,6 +26,7 @@ const zhTw: LocaleType = {
     "handles.dragReorder": "拖曳以重排",
     "handles.switchToParagraph": "切換到段落模式",
     "handles.switchToLine": "切換到行模式",
+    "drag.blocks": "{n} 個區塊",
 
     "menu.turnInto": "轉換成",
     "menu.insert": "新增",

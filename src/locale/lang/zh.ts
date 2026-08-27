@@ -26,6 +26,7 @@ const zh: LocaleType = {
     "handles.dragReorder": "拖拽以重排",
     "handles.switchToParagraph": "切换到段落模式",
     "handles.switchToLine": "切换到行模式",
+    "drag.blocks": "{n} 个块",
 
     "menu.turnInto": "转换成",
     "menu.insert": "新增",
