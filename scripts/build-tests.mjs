@@ -19,6 +19,7 @@ await esbuild.build({
 		"src/dragRange.ts",
 		"src/handleZone.ts",
 		"src/foldRange.ts",
+		"src/insertRegistry.ts",
 		"src/planMove.ts",
 		"src/blockCommands.ts",
 		"src/insertPlan.ts",
