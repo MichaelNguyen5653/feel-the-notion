@@ -121,7 +121,31 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     onScroll = () => this.invalidateMetrics();
     onResize = () => this.invalidateMetrics();
 
+    /**
+     * Pointer tracking, bound to the scroller rather than the content.
+     *
+     * WHY NOT ViewPlugin's eventHandlers
+     * CodeMirror attaches a plugin's eventHandlers to `view.contentDOM`
+     * (ensureHandlers, @codemirror/view). The gutter the handle sits in is
+     * outside that element, so the moment the pointer crossed out of the text
+     * toward the handle, contentDOM fired `mouseleave` and then went silent:
+     * no further mousemove arrived while the pointer was in the gutter.
+     *
+     * That made the hover zone decorative. isInsideHandleZone could only ever
+     * be asked about points inside the content, which are inside the zone by
+     * construction, so widening it changed nothing — the handle still started
+     * hiding as soon as you reached for it, and only the handle's own
+     * mouseenter could call it back. The scroller contains the content, the
+     * gutter and the handle, so binding here is what lets the zone do its job.
+     */
+    onPointerMove = (event: MouseEvent) => this.handleMouseMove(this.view, event);
+    onPointerLeave = () => this.handleMouseLeave();
+
+    /** Held for the listeners above, which outlive any single update. */
+    view: EditorView;
+
     constructor(view: EditorView) {
+        this.view = view;
         this.ownerWindow = view.dom.ownerDocument.defaultView ?? activeWindow;
         this.scheduler = new FrameScheduler(this.ownerWindow);
         this.scrollEl = view.scrollDOM;
@@ -139,6 +163,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         // stop being true the moment the editor scrolls or the window resizes.
         view.scrollDOM.addEventListener("scroll", this.onScroll, { passive: true });
         this.ownerWindow.addEventListener("resize", this.onResize);
+
+        // See onPointerMove: these belong on the scroller, not on contentDOM.
+        view.scrollDOM.addEventListener("mousemove", this.onPointerMove, { passive: true });
+        view.scrollDOM.addEventListener("mouseleave", this.onPointerLeave);
     }
 
     createHandle(view: EditorView) {
@@ -646,6 +674,8 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             this.hideTimeout = null;
         }
         this.scrollEl.removeEventListener("scroll", this.onScroll);
+        this.scrollEl.removeEventListener("mousemove", this.onPointerMove);
+        this.scrollEl.removeEventListener("mouseleave", this.onPointerLeave);
         this.ownerWindow.removeEventListener("resize", this.onResize);
         // The drag manager's listeners are on the document, not on the view, so
         // they outlive the view unless it says so explicitly.
@@ -653,15 +683,6 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         this.dragManager = null;
         if (this.handleEl) {
             this.handleEl.remove();
-        }
-    }
-}, {
-    eventHandlers: {
-        mousemove(event, _view) {
-            this.handleMouseMove(_view, event);
-        },
-        mouseleave(_event, _view) {
-            this.handleMouseLeave();
         }
     }
 });
