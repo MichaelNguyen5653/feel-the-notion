@@ -280,8 +280,17 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         }
     }
 
-    updatePosition(view: EditorView) {
-        if (this.hoveredLine === null || !this.handleEl) return;
+    /**
+     * Repositions the handle over the hovered line.
+     *
+     * Returns whether it actually wrote a transform. Callers that unhide the
+     * handle before repositioning it (followCaret) need to know: unhiding
+     * unconditionally would leave a positionless handle parked at the
+     * wrapper's default top:0/left:0 whenever coordsAtPos can't yet resolve
+     * the line, which happens if this fires before the view's first layout.
+     */
+    updatePosition(view: EditorView): boolean {
+        if (this.hoveredLine === null || !this.handleEl) return false;
 
         try {
             const line = view.state.doc.line(this.hoveredLine);
@@ -291,7 +300,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // A write in the middle would force layout to be recomputed before
             // each remaining read could be answered.
             const coords = view.coordsAtPos(line.from);
-            if (!coords) return;
+            if (!coords) return false;
 
             // The end of the line, so a wrapped paragraph's band covers all of
             // its visual rows rather than only the first.
@@ -334,8 +343,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             }
 
             this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });
+            return true;
         } catch {
             this.hideHandle();
+            return false;
         }
     }
 
@@ -476,8 +487,14 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         try {
             const line = view.state.doc.lineAt(view.state.selection.main.head);
             this.hoveredLine = line.number;
-            this.handleEl.classList.remove("is-hidden");
-            this.updatePosition(view);
+            // Unhide only once updatePosition confirms it wrote a transform.
+            // Unhiding first would show the handle at the wrapper's default
+            // top:0/left:0 whenever coordsAtPos can't resolve the line yet —
+            // reachable here because the constructor calls this before the
+            // view's first layout has necessarily completed.
+            if (this.updatePosition(view)) {
+                this.handleEl.classList.remove("is-hidden");
+            }
         } catch {
             // Position may be invalid mid-change; the next update retries.
         }
