@@ -26,6 +26,11 @@ const zhTw: LocaleType = {
     "handles.dragReorder": "拖曳以重排",
     "handles.switchToParagraph": "切換到段落模式",
     "handles.switchToLine": "切換到行模式",
+    "handles.fold": "摺疊區塊",
+    "handles.unfold": "展開區塊",
+    "fold.expand": "點擊展開",
+    "settings.foldHandle.name": "顯示摺疊箭頭",
+    "settings.foldHandle.desc": "控制柄上的箭頭，可將區塊摺疊為首行。僅在有內容可摺疊的區塊上顯示。",
     "drag.blocks": "{n} 個區塊",
 
     "menu.turnInto": "轉換成",

@@ -11,6 +11,8 @@ import { DragManager } from "./dragDrop";
 import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
 import { handleOffsetX, isInsideHandleZone } from "./handleZone";
+import { isFoldedAtLine, toggleFoldAtLine } from "./blockFold";
+import { foldableRange } from "./foldRange";
 
 /**
  * Editor geometry that a pointer move needs but cannot change.
@@ -39,6 +41,7 @@ interface Metrics {
 export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromClass(class {
     handleEl: HTMLElement | null = null;
     addButton: HTMLElement | null = null;
+    foldButton: HTMLElement | null = null;
     dragButton: HTMLElement | null = null;
     
     hoveredLine: number | null = null;
@@ -67,6 +70,9 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
 
     /** Last value written to the "+" button, so an unchanged setting writes nothing. */
     plusHandleShown: boolean | null = null;
+
+    /** Last fold state written to the chevron, so an unchanged state writes nothing. */
+    foldShown: "none" | "folded" | "unfolded" | null = null;
 
     /** Last side written to the wrapper, so an unchanged setting writes nothing. */
     sideShown: "left" | "right" | null = null;
@@ -114,8 +120,28 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             attr: { "aria-label": t("handles.addBlock") } 
         });
         setIcon(this.addButton, "plus");
-        
-        this.dragButton = this.handleEl.createDiv({ 
+
+        // First in the row so it reads left to right as fold, add, drag —
+        // and so the two buttons that were already there keep their positions.
+        this.foldButton = this.handleEl.createDiv({
+            cls: "block-handle-button fold-button",
+            attr: { "aria-label": t("handles.fold") }
+        });
+        setIcon(this.foldButton, "chevron-down");
+
+        this.foldButton.onclick = (e) => {
+            if (this.hoveredLine === null) return;
+            e.stopPropagation();
+            if (this.hideTimeout) {
+                this.ownerWindow.clearTimeout(this.hideTimeout);
+                this.hideTimeout = null;
+            }
+            toggleFoldAtLine(view, this.hoveredLine);
+            // The toggle dispatches, so update() runs and repositions; the
+            // chevron's own direction is refreshed there too.
+        };
+
+        this.dragButton = this.handleEl.createDiv({
             cls: "block-handle-button drag-button", 
             attr: { "aria-label": t("handles.dragReorder") } 
         });
@@ -340,6 +366,27 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 // Reversing the row keeps the grip nearest the text on both
                 // sides, so the button under the pointer is the same one.
                 this.handleEl.classList.toggle("is-right", this.sideShown === "right");
+            }
+
+            // The chevron is only meaningful where folding would hide
+            // something, so a lone paragraph gets no button rather than a
+            // button that visibly does nothing.
+            const foldState = !plugin.settings.foldHandle || !foldableRange(view.state.doc, this.hoveredLine)
+                ? "none"
+                : isFoldedAtLine(view, this.hoveredLine)
+                ? "folded"
+                : "unfolded";
+
+            if (this.foldShown !== foldState) {
+                this.foldShown = foldState;
+                this.foldButton?.toggle(foldState !== "none");
+                if (this.foldButton && foldState !== "none") {
+                    setIcon(this.foldButton, foldState === "folded" ? "chevron-right" : "chevron-down");
+                    this.foldButton.setAttribute(
+                        "aria-label",
+                        foldState === "folded" ? t("handles.unfold") : t("handles.fold")
+                    );
+                }
             }
 
             this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });

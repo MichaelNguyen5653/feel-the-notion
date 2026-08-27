@@ -21,6 +21,26 @@
     flex-direction: row-reverse;
 }
 
+.ftn-fold-ellipsis {
+    display: inline-block;
+    margin-left: 0.35em;
+    padding: 0 0.35em;
+    border-radius: 4px;
+    background-color: var(--background-modifier-hover);
+    color: var(--text-muted);
+    cursor: pointer;
+    /* The glyph is a full em wide and reads as too heavy at body size. */
+    font-size: 0.85em;
+    line-height: 1.2;
+    vertical-align: baseline;
+    user-select: none;
+}
+
+.ftn-fold-ellipsis:hover {
+    background-color: var(--background-modifier-active-hover);
+    color: var(--text-normal);
+}
+
 .block-handle-button {
     width: 20px;
     height: 20px;

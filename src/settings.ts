@@ -11,6 +11,8 @@ export interface BlockPluginSettings {
     handleSide: 'left' | 'right';
     /** Pin the handle to the caret's block so it never hides on pointer-out. */
     handleAlwaysVisible: boolean;
+    /** Show the fold chevron on the hover handle. */
+    foldHandle: boolean;
     dateFormat: string;
     timeFormat: string;
     /** Hide markdown syntax markers on the active line too, killing reflow. */
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // OFF by default: it changes the handle from a hover affordance into a
     // permanent one, which is a different editor to look at.
     handleAlwaysVisible: false,
+    foldHandle: true,
     dateFormat: 'YYYY-MM-DD',
     timeFormat: 'HH:mm',
     // OFF by default: it changes editing behaviour, not just appearance.
@@ -140,6 +143,16 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.handleAlwaysVisible)
                 .onChange(async (value) => {
                     this.plugin.settings.handleAlwaysVisible = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('settings.foldHandle.name'))
+            .setDesc(t('settings.foldHandle.desc'))
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.foldHandle)
+                .onChange(async (value) => {
+                    this.plugin.settings.foldHandle = value;
                     await this.plugin.saveSettings();
                 }));
 

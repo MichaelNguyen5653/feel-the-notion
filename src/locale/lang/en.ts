@@ -24,6 +24,11 @@ const en = {
     "handles.dragReorder": "Drag to reorder",
     "handles.switchToParagraph": "Switch to paragraph mode",
     "handles.switchToLine": "Switch to line mode",
+    "handles.fold": "Fold block",
+    "handles.unfold": "Unfold block",
+    "fold.expand": "Click to unfold",
+    "settings.foldHandle.name": "Show the fold chevron",
+    "settings.foldHandle.desc": "A chevron on the handle that collapses a block to its first line. It only appears on blocks that have something to hide.",
     "drag.blocks": "{n} blocks",
 
     "menu.turnInto": "Turn into",
