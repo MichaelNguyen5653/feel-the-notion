@@ -401,7 +401,12 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 if (!Number.isInteger(from) || from === index) return;
                 const next = [...order];
                 const [moved] = next.splice(from, 1);
-                next.splice(index, 0, moved);
+                // `index` was measured against the pre-removal array, so once the dragged
+                // row is spliced out everything after it has shifted up by one. Without
+                // this correction a downward drag lands the row after its target while an
+                // upward drag lands before it, and the outline means the same thing both
+                // times.
+                next.splice(index - (from < index ? 1 : 0), 0, moved);
                 await persist(next);
             });
         });
