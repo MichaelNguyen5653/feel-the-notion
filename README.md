@@ -26,6 +26,17 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.5.0
+
+Bug fixes and improvements.
+
+New features:
+
+- Handle position and always-on pinning
+- Block folding from the handle
+- Multi-block drag
+- Insert menu reordering, hiding and custom commands
+
 ### 0.4.0
 
 Bug fixes and improvements:
