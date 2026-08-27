@@ -10,6 +10,14 @@ import { closeNotionBlockInsertMenus, showNotionBlockInsertMenu } from "./notion
 import { DragManager } from "./dragDrop";
 import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
+import { handleOffsetX, isInsideHandleZone } from "./handleZone";
+import {
+    foldBlockEffect,
+    foldOffsetsAtLine,
+    isFoldActiveAt,
+    toggleFoldAtLine,
+    unfoldBlockEffect,
+} from "./blockFold";
 
 /**
  * Editor geometry that a pointer move needs but cannot change.
@@ -27,6 +35,8 @@ interface Metrics {
     viewHeight: number;
     /** Viewport-space left edge of the content, for probing a line by its Y. */
     contentLeft: number;
+    /** Width of the content, for placing a right-side handle. */
+    contentWidth: number;
     /** Offset of the content inside the scroller, for placing the handle. */
     contentOffsetLeft: number;
     scrollerTop: number;
@@ -36,6 +46,7 @@ interface Metrics {
 export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromClass(class {
     handleEl: HTMLElement | null = null;
     addButton: HTMLElement | null = null;
+    foldButton: HTMLElement | null = null;
     dragButton: HTMLElement | null = null;
     
     hoveredLine: number | null = null;
@@ -65,22 +76,97 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     /** Last value written to the "+" button, so an unchanged setting writes nothing. */
     plusHandleShown: boolean | null = null;
 
+    /** Last fold state written to the chevron, so an unchanged state writes nothing. */
+    foldShown: "none" | "folded" | "unfolded" | null = null;
+
+    /**
+     * Bumped on every document change, as a cache key for anything derived
+     * from the document. Cheaper than remembering the doc itself, and enough:
+     * a walk's answer can only go stale when the text under it moves.
+     */
+    docGeneration = 0;
+
+    /**
+     * What a fold on the hovered line would cover, and what that was measured
+     * against.
+     *
+     * WHY IT IS WORTH CACHING
+     * foldOffsetsAtLine walks the document — for a heading, forward to the
+     * next heading at the same depth or shallower, which under a lone `# H1`
+     * is every remaining line of the note. updatePosition needs the answer on
+     * every reposition, and in always-visible mode that is once per keystroke.
+     * The answer depends only on the line and the text, so a fold being opened
+     * or closed does not invalidate it — only which fold is *active* changes,
+     * and that is a range lookup rather than a walk.
+     */
+    foldOffsetsCache: {
+        line: number;
+        generation: number;
+        offsets: { from: number; to: number } | null;
+    } | null = null;
+
+    /** Last side written to the wrapper, so an unchanged setting writes nothing. */
+    sideShown: "left" | "right" | null = null;
+
+    /**
+     * Last observed value of `handleAlwaysVisible`, so `update()` can detect
+     * the true -> false transition and hide a handle that has nothing left
+     * pinning it on screen.
+     */
+    alwaysVisibleShown: boolean | null = null;
+
     /** Held directly: CodeMirror's destroy() is passed no view to ask for it. */
     scrollEl: HTMLElement;
 
     onScroll = () => this.invalidateMetrics();
     onResize = () => this.invalidateMetrics();
 
+    /**
+     * Pointer tracking, bound to the scroller rather than the content.
+     *
+     * WHY NOT ViewPlugin's eventHandlers
+     * CodeMirror attaches a plugin's eventHandlers to `view.contentDOM`
+     * (ensureHandlers, @codemirror/view). The gutter the handle sits in is
+     * outside that element, so the moment the pointer crossed out of the text
+     * toward the handle, contentDOM fired `mouseleave` and then went silent:
+     * no further mousemove arrived while the pointer was in the gutter.
+     *
+     * That made the hover zone decorative. isInsideHandleZone could only ever
+     * be asked about points inside the content, which are inside the zone by
+     * construction, so widening it changed nothing — the handle still started
+     * hiding as soon as you reached for it, and only the handle's own
+     * mouseenter could call it back. The scroller contains the content, the
+     * gutter and the handle, so binding here is what lets the zone do its job.
+     */
+    onPointerMove = (event: MouseEvent) => this.handleMouseMove(this.view, event);
+    onPointerLeave = () => this.handleMouseLeave();
+
+    /** Held for the listeners above, which outlive any single update. */
+    view: EditorView;
+
     constructor(view: EditorView) {
+        this.view = view;
         this.ownerWindow = view.dom.ownerDocument.defaultView ?? activeWindow;
         this.scheduler = new FrameScheduler(this.ownerWindow);
         this.scrollEl = view.scrollDOM;
         this.createHandle(view);
 
+        // ViewPlugin.update() does not fire at construction, so without this a
+        // freshly opened pane in always-visible mode would show no handle
+        // until a selection, doc, or viewport change happened.
+        this.alwaysVisibleShown = plugin.settings.handleAlwaysVisible;
+        if (plugin.settings.handleAlwaysVisible) {
+            this.followCaret(view);
+        }
+
         // Both cached rects and the hovered band are viewport-relative, so they
         // stop being true the moment the editor scrolls or the window resizes.
         view.scrollDOM.addEventListener("scroll", this.onScroll, { passive: true });
         this.ownerWindow.addEventListener("resize", this.onResize);
+
+        // See onPointerMove: these belong on the scroller, not on contentDOM.
+        view.scrollDOM.addEventListener("mousemove", this.onPointerMove, { passive: true });
+        view.scrollDOM.addEventListener("mouseleave", this.onPointerLeave);
     }
 
     createHandle(view: EditorView) {
@@ -93,8 +179,28 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             attr: { "aria-label": t("handles.addBlock") } 
         });
         setIcon(this.addButton, "plus");
-        
-        this.dragButton = this.handleEl.createDiv({ 
+
+        // First in the row so it reads left to right as fold, add, drag —
+        // and so the two buttons that were already there keep their positions.
+        this.foldButton = this.handleEl.createDiv({
+            cls: "block-handle-button fold-button",
+            attr: { "aria-label": t("handles.fold") }
+        });
+        setIcon(this.foldButton, "chevron-down");
+
+        this.foldButton.onclick = (e) => {
+            if (this.hoveredLine === null) return;
+            e.stopPropagation();
+            if (this.hideTimeout) {
+                this.ownerWindow.clearTimeout(this.hideTimeout);
+                this.hideTimeout = null;
+            }
+            toggleFoldAtLine(view, this.hoveredLine);
+            // The toggle dispatches, so update() runs and repositions; the
+            // chevron's own direction is refreshed there too.
+        };
+
+        this.dragButton = this.handleEl.createDiv({
             cls: "block-handle-button drag-button", 
             attr: { "aria-label": t("handles.dragReorder") } 
         });
@@ -220,6 +326,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             viewWidth: viewRect.width,
             viewHeight: viewRect.height,
             contentLeft: contentRect.left,
+            contentWidth: contentRect.width,
             contentOffsetLeft: view.contentDOM.offsetLeft,
             scrollerTop: scrollerRect.top,
             scrollTop: view.scrollDOM.scrollTop,
@@ -228,18 +335,82 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     }
 
     update(update: ViewUpdate) {
+        if (update.docChanged) this.docGeneration++;
+
         // Any of these can move the line the handle is pinned to, so the cached
         // rects and the hovered band both stop being trustworthy.
-        if (update.docChanged || update.viewportChanged || update.geometryChanged) {
-            this.invalidateMetrics();
-            if (this.hoveredLine !== null) {
-                this.updatePosition(update.view);
-            }
+        const movedUnderUs =
+            update.docChanged || update.viewportChanged || update.geometryChanged;
+        if (movedUnderUs) this.invalidateMetrics();
+
+        // saveSettings() calls app.workspace.updateOptions(), which reconfigures
+        // the editor and fires update() — the only place this transition is
+        // observable, since the settings pane isn't over the editor to trigger
+        // a mouse event. Without this the handle stayed parked at its last
+        // caret position after the toggle was switched off.
+        if (this.alwaysVisibleShown && !plugin.settings.handleAlwaysVisible) {
+            this.hideHandle();
+        }
+        this.alwaysVisibleShown = plugin.settings.handleAlwaysVisible;
+
+        // In always-visible mode the caret, not the pointer, decides where the
+        // handle lives. Also runs when the handle isn't currently placed
+        // anywhere, so re-enabling the setting immediately puts it back on the
+        // caret's block instead of waiting for the next selection or doc change.
+        const followsCaret =
+            plugin.settings.handleAlwaysVisible &&
+            (update.selectionSet || update.docChanged || this.hoveredLine === null);
+
+        // A fold toggle is a decoration-only transaction and need not report
+        // any of the flags above, so without this the chevron kept pointing
+        // the wrong way until some unrelated update happened to reposition it.
+        const foldToggled = update.transactions.some((tr) =>
+            tr.effects.some((e) => e.is(foldBlockEffect) || e.is(unfoldBlockEffect))
+        );
+
+        // Exactly one positioning pass per update. followCaret repositions on
+        // its own, and it does so from the caret; running updatePosition first
+        // would repeat every measurement against the line the caret has
+        // already left, which in a long note means two full document walks per
+        // keystroke.
+        if (followsCaret) {
+            this.followCaret(update.view);
+            return;
+        }
+
+        if ((movedUnderUs || foldToggled) && this.hoveredLine !== null) {
+            this.updatePosition(update.view);
         }
     }
 
-    updatePosition(view: EditorView) {
-        if (this.hoveredLine === null || !this.handleEl) return;
+    /**
+     * What a fold on `lineNo` would cover, recomputed only when it can differ.
+     *
+     * See foldOffsetsCache: this stands in front of a document walk that
+     * updatePosition would otherwise run on every reposition.
+     */
+    foldOffsetsFor(view: EditorView, lineNo: number): { from: number; to: number } | null {
+        const cached = this.foldOffsetsCache;
+        if (cached && cached.line === lineNo && cached.generation === this.docGeneration) {
+            return cached.offsets;
+        }
+
+        const offsets = foldOffsetsAtLine(view, lineNo);
+        this.foldOffsetsCache = { line: lineNo, generation: this.docGeneration, offsets };
+        return offsets;
+    }
+
+    /**
+     * Repositions the handle over the hovered line.
+     *
+     * Returns whether it actually wrote a transform. Callers that unhide the
+     * handle before repositioning it (followCaret) need to know: unhiding
+     * unconditionally would leave a positionless handle parked at the
+     * wrapper's default top:0/left:0 whenever coordsAtPos can't yet resolve
+     * the line, which happens if this fires before the view's first layout.
+     */
+    updatePosition(view: EditorView): boolean {
+        if (this.hoveredLine === null || !this.handleEl) return false;
 
         try {
             const line = view.state.doc.line(this.hoveredLine);
@@ -249,7 +420,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // A write in the middle would force layout to be recomputed before
             // each remaining read could be answered.
             const coords = view.coordsAtPos(line.from);
-            if (!coords) return;
+            if (!coords) return false;
 
             // The end of the line, so a wrapped paragraph's band covers all of
             // its visual rows rather than only the first.
@@ -270,7 +441,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             top += (lineHeight - this.handleHeight) / 2;
 
             // Calculate left position based on contentDOM offset
-            const left = m.contentOffsetLeft - 52;
+            const left = handleOffsetX(m, plugin.settings.handleSide);
 
             this.hoveredBand = { top: coords.top, bottom: (endCoords ?? coords).bottom };
 
@@ -284,9 +455,42 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 this.addButton?.toggle(plugin.settings.plusHandle);
             }
 
+            if (this.sideShown !== plugin.settings.handleSide) {
+                this.sideShown = plugin.settings.handleSide;
+                // Reversing the row keeps the grip nearest the text on both
+                // sides, so the button under the pointer is the same one.
+                this.handleEl.classList.toggle("is-right", this.sideShown === "right");
+            }
+
+            // The chevron is only meaningful where folding would hide
+            // something, so a lone paragraph gets no button rather than a
+            // button that visibly does nothing.
+            const foldOffsets = plugin.settings.foldHandle
+                ? this.foldOffsetsFor(view, this.hoveredLine)
+                : null;
+            const foldState = !foldOffsets
+                ? "none"
+                : isFoldActiveAt(view, foldOffsets.from)
+                ? "folded"
+                : "unfolded";
+
+            if (this.foldShown !== foldState) {
+                this.foldShown = foldState;
+                this.foldButton?.toggle(foldState !== "none");
+                if (this.foldButton && foldState !== "none") {
+                    setIcon(this.foldButton, foldState === "folded" ? "chevron-right" : "chevron-down");
+                    this.foldButton.setAttribute(
+                        "aria-label",
+                        foldState === "folded" ? t("handles.unfold") : t("handles.fold")
+                    );
+                }
+            }
+
             this.handleEl.setCssStyles({ transform: `translate3d(${left}px, ${Math.round(top)}px, 0)` });
+            return true;
         } catch {
             this.hideHandle();
+            return false;
         }
     }
 
@@ -313,8 +517,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         const x = clientX - m.viewLeft;
         const y = clientY - m.viewTop;
 
-        // Detection range check - Expand left range to accommodate the handle
-        if (x < -100 || x > m.viewWidth + 100 || y < 0 || y > m.viewHeight) {
+        // Asymmetric on purpose: the allowance belongs on the side the handle
+        // is actually drawn on. A symmetric test was simultaneously too mean
+        // there and pointless on the empty side.
+        if (!isInsideHandleZone(m, x, y, plugin.settings.handleSide)) {
             this.handleMouseLeave();
             return;
         }
@@ -325,7 +531,6 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 this.hideTimeout = null;
             }
             if (this.handleEl.classList.contains("is-hidden")) {
-                this.handleEl.classList.remove("is-hidden");
                 // If it was fully nullified, try to recover the line from current Y
                 if (this.hoveredLine === null) {
                     const pos = view.posAtCoords({ x: m.contentLeft + 5, y: clientY });
@@ -337,7 +542,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                         }
                     }
                 }
-                this.updatePosition(view);
+                // Unhide only once updatePosition confirms it wrote a transform,
+                // for the same reason followCaret does: unhiding first parks a
+                // positionless handle at the wrapper's default top:0/left:0
+                // whenever coordsAtPos cannot resolve the line.
+                if (this.updatePosition(view)) {
+                    this.handleEl.classList.remove("is-hidden");
+                }
             }
             return;
         }
@@ -377,8 +588,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // differently-numbered line.
             if (this.hoveredLine !== line.number || isHidden) {
                 this.hoveredLine = line.number;
-                this.handleEl.classList.remove("is-hidden");
-                this.updatePosition(view);
+                // Unhide only on a confirmed reposition — see followCaret.
+                if (this.updatePosition(view)) {
+                    this.handleEl.classList.remove("is-hidden");
+                }
             }
 
             if (this.hideTimeout) {
@@ -391,13 +604,17 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     }
 
     handleMouseLeave() {
+        // Pinned to the caret rather than the pointer: there is no such thing
+        // as leaving.
+        if (plugin.settings.handleAlwaysVisible) return;
+
         // A pointer move queued for the next frame would run after this one and
         // clear the hide timeout set below, leaving the handle stranded on
         // screen after the pointer had already left the editor.
         this.scheduler.cancel();
 
         if (this.hideTimeout) this.ownerWindow.clearTimeout(this.hideTimeout);
-        
+
         this.hideTimeout = this.ownerWindow.setTimeout(() => {
             // Check if mouse is actually over the handle or we are still hovering
             if (this.isMouseOverHandle || this.handleEl?.matches(":hover")) {
@@ -407,6 +624,31 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             this.hoveredBand = null;
             this.handleEl?.classList.add("is-hidden");
         }, plugin.settings.hideDelay);
+    }
+
+    /**
+     * Parks the handle on the caret's block.
+     *
+     * Only used in always-visible mode. Hover still moves the handle there,
+     * so this is what puts it somewhere sensible when the pointer is nowhere
+     * near the editor: on the block being edited.
+     */
+    followCaret(view: EditorView) {
+        if (!this.handleEl) return;
+        try {
+            const line = view.state.doc.lineAt(view.state.selection.main.head);
+            this.hoveredLine = line.number;
+            // Unhide only once updatePosition confirms it wrote a transform.
+            // Unhiding first would show the handle at the wrapper's default
+            // top:0/left:0 whenever coordsAtPos can't resolve the line yet —
+            // reachable here because the constructor calls this before the
+            // view's first layout has necessarily completed.
+            if (this.updatePosition(view)) {
+                this.handleEl.classList.remove("is-hidden");
+            }
+        } catch {
+            // Position may be invalid mid-change; the next update retries.
+        }
     }
 
     hideHandle() {
@@ -432,6 +674,8 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             this.hideTimeout = null;
         }
         this.scrollEl.removeEventListener("scroll", this.onScroll);
+        this.scrollEl.removeEventListener("mousemove", this.onPointerMove);
+        this.scrollEl.removeEventListener("mouseleave", this.onPointerLeave);
         this.ownerWindow.removeEventListener("resize", this.onResize);
         // The drag manager's listeners are on the document, not on the view, so
         // they outlive the view unless it says so explicitly.
@@ -439,15 +683,6 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         this.dragManager = null;
         if (this.handleEl) {
             this.handleEl.remove();
-        }
-    }
-}, {
-    eventHandlers: {
-        mousemove(event, _view) {
-            this.handleMouseMove(_view, event);
-        },
-        mouseleave(_event, _view) {
-            this.handleMouseLeave();
         }
     }
 });

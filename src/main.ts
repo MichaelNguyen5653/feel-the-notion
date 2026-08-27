@@ -6,6 +6,7 @@ import { hideSyntaxExtension } from './hideSyntax';
 import { blockSelectionExtension } from './blockSelection';
 import { blockKeymapExtension } from './blockKeymap';
 import { slashMenuExtension } from './slashMenu';
+import { blockFoldExtension } from './blockFold';
 import { showNotionBlockInsertMenu } from './notionInsertMenu';
 import { t } from './locale/helpers';
 
@@ -22,6 +23,7 @@ export default class NotionBlock extends Plugin {
             blockSelectionExtension(this),
             blockKeymapExtension(this),
             slashMenuExtension(this),
+            blockFoldExtension(),
         ]);
 
         // The same menu the "+" handle and the trigger character open, exposed

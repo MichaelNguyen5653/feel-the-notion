@@ -9,6 +9,12 @@ const en = {
     "settings.hoverDelay.desc": "Delay (ms) before showing handles.",
     "settings.hideDelay.name": "Button hide delay",
     "settings.hideDelay.desc": "Delay (ms) before hiding handles.",
+    "settings.handleSide.name": "Handle side",
+    "settings.handleSide.desc": "Which edge of the text the handle sits beside.",
+    "settings.handleSide.left": "Left",
+    "settings.handleSide.right": "Right",
+    "settings.handleAlwaysVisible.name": "Always show the handle",
+    "settings.handleAlwaysVisible.desc": "Pin the handle to the block the caret is in, so it never hides when the pointer moves away.",
     "settings.dateFormat.name": "Date format",
     "settings.dateFormat.desc": "Format for today/yesterday/tomorrow.",
     "settings.timeFormat.name": "Time format",
@@ -18,6 +24,12 @@ const en = {
     "handles.dragReorder": "Drag to reorder",
     "handles.switchToParagraph": "Switch to paragraph mode",
     "handles.switchToLine": "Switch to line mode",
+    "handles.fold": "Fold block",
+    "handles.unfold": "Unfold block",
+    "fold.expand": "Click to unfold",
+    "settings.foldHandle.name": "Show the fold chevron",
+    "settings.foldHandle.desc": "A chevron on the handle that collapses a block to its first line. It only appears on blocks that have something to hide.",
+    "drag.blocks": "{n} blocks",
 
     "menu.turnInto": "Turn into",
     "menu.insert": "Insert",
@@ -27,6 +39,7 @@ const en = {
     "menu.callout": "Callout",
 
     "menu.headings": "Headings",
+    "menu.custom": "Custom",
     "menu.paragraph": "Text",
     "menu.h1": "Heading 1",
     "menu.h2": "Heading 2",
@@ -115,7 +128,23 @@ const en = {
     "command.openInsertMenu": "Open block insert menu",
     "menu.closeMenu": "Close menu",
     "page.untitled": "Untitled",
-    "toc.title": "Table of contents"
+    "toc.title": "Table of contents",
+
+    "settings.insertItems.name": "Insert menu items",
+    "settings.insertItems.desc": "Drag to reorder. Uncheck to hide a row. Add a row to run any Obsidian command from the menu.",
+    "settings.addCommand": "Add command",
+    "settings.resetOrder": "Reset order",
+    "settings.commandMissing": "Command unavailable",
+    "settings.customCommand.title": "Custom insert command",
+    "settings.customCommand.label": "Name",
+    "settings.customCommand.command": "Command",
+    "settings.customCommand.commandDesc": "Start typing to search Obsidian's commands.",
+    "settings.customCommand.icon": "Icon",
+    "settings.customCommand.iconDesc": "A Lucide icon name, e.g. \"zap\" or \"pencil\".",
+    "settings.customCommand.save": "Save",
+    "settings.customCommand.cancel": "Cancel",
+    "settings.customCommand.edit": "Edit",
+    "settings.customCommand.delete": "Delete"
 };
 
 export default en;

@@ -21,6 +21,8 @@ import {
 	pickIndent,
 	detectIndentUnit,
 	isListItem,
+	countBlocks,
+	describeDragGhost,
 } from "./.build/dragRange.js";
 
 const DOC = [
@@ -319,4 +321,44 @@ test("an indented continuation still joins the item above it", () => {
 	const d = listDoc(["- item", "    continuation"]);
 	const r = resolveDragRange(d, 2, "paragraph");
 	assert.deepEqual([r.firstLine, r.lastLine], [1, 2]);
+});
+
+// ── ghost label ────────────────────────────────────────────────────────────
+
+test("a single block's ghost shows its own text", () => {
+	assert.equal(describeDragGhost("hello world", 1, "{n} blocks"), "hello world");
+});
+
+test("a long single block is truncated with an ellipsis", () => {
+	const long = "x".repeat(60);
+	const ghost = describeDragGhost(long, 1, "{n} blocks");
+	assert.equal(ghost, "x".repeat(50) + "...");
+});
+
+test("several blocks show a count, not concatenated text", () => {
+	// Reported: dragging four blocks produced 50 characters of run-together
+	// prose that read as garbage. The count is what the user actually needs.
+	assert.equal(describeDragGhost("a\nb\nc\nd", 4, "{n} blocks"), "4 blocks");
+});
+
+test("the count label is supplied by the caller, so this stays DOM-free", () => {
+	assert.equal(describeDragGhost("a\nb", 2, "{n} 个块"), "2 个块");
+});
+
+test("counting blocks ignores nesting and blank lines", () => {
+	const d = listDoc([
+		"first",          // 1
+		"    nested",     // 2
+		"",               // 3
+		"- item",         // 4
+		"    - child",    // 5
+		"second",         // 6
+	]);
+	// "first" owns line 2, the list item owns line 5, "second" is its own.
+	assert.equal(countBlocks(d, 1, 6), 3);
+});
+
+test("counting a single block that owns children returns one", () => {
+	const d = listDoc(["- item", "    - child", "    - child"]);
+	assert.equal(countBlocks(d, 1, 3), 1);
 });

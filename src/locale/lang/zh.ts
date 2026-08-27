@@ -11,6 +11,12 @@ const zh: LocaleType = {
     "settings.hoverDelay.desc": "显示句柄之前的延迟（毫秒）。",
     "settings.hideDelay.name": "悬浮隐藏延迟",
     "settings.hideDelay.desc": "隐藏句柄之前的延迟（毫秒）。",
+    "settings.handleSide.name": "手柄位置",
+    "settings.handleSide.desc": "手柄显示在正文的哪一侧。",
+    "settings.handleSide.left": "左侧",
+    "settings.handleSide.right": "右侧",
+    "settings.handleAlwaysVisible.name": "始终显示手柄",
+    "settings.handleAlwaysVisible.desc": "将手柄固定在光标所在的块上，鼠标移开时也不隐藏。",
     "settings.dateFormat.name": "日期格式",
     "settings.dateFormat.desc": "今天/昨天/明天的日期格式。",
     "settings.timeFormat.name": "时间格式",
@@ -20,6 +26,12 @@ const zh: LocaleType = {
     "handles.dragReorder": "拖拽以重排",
     "handles.switchToParagraph": "切换到段落模式",
     "handles.switchToLine": "切换到行模式",
+    "handles.fold": "折叠块",
+    "handles.unfold": "展开块",
+    "fold.expand": "点击展开",
+    "settings.foldHandle.name": "显示折叠箭头",
+    "settings.foldHandle.desc": "手柄上的箭头，可将块折叠为首行。仅在有内容可折叠的块上显示。",
+    "drag.blocks": "{n} 个块",
 
     "menu.turnInto": "转换成",
     "menu.insert": "新增",
@@ -30,6 +42,7 @@ const zh: LocaleType = {
 
     "menu.paragraph": "文本",
     "menu.headings": "标题",
+    "menu.custom": "自定义",
     "menu.h1": "标题 1",
     "menu.h2": "标题 2",
     "menu.h3": "标题 3",
@@ -117,7 +130,23 @@ const zh: LocaleType = {
     "command.openInsertMenu": "打开块插入菜单",
     "menu.closeMenu": "关闭菜单",
     "page.untitled": "未命名",
-    "toc.title": "目录"
+    "toc.title": "目录",
+
+    "settings.insertItems.name": "插入菜单项",
+    "settings.insertItems.desc": "拖动可排序，取消勾选可隐藏。添加条目即可在菜单中执行任意 Obsidian 命令。",
+    "settings.addCommand": "添加命令",
+    "settings.resetOrder": "重置排序",
+    "settings.commandMissing": "该命令目前不可用",
+    "settings.customCommand.title": "自定义插入命令",
+    "settings.customCommand.label": "名称",
+    "settings.customCommand.command": "命令",
+    "settings.customCommand.commandDesc": "输入以搜索 Obsidian 命令。",
+    "settings.customCommand.icon": "图标",
+    "settings.customCommand.iconDesc": "Lucide 图标名称，例如 \"zap\" 或 \"pencil\"。",
+    "settings.customCommand.save": "保存",
+    "settings.customCommand.cancel": "取消",
+    "settings.customCommand.edit": "编辑",
+    "settings.customCommand.delete": "删除"
 };
 
 export default zh;

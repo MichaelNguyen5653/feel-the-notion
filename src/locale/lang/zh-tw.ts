@@ -11,6 +11,12 @@ const zhTw: LocaleType = {
     "settings.hoverDelay.desc": "顯示句柄之前的延遲（毫秒）。",
     "settings.hideDelay.name": "懸停隱藏延遲",
     "settings.hideDelay.desc": "隱藏句柄之前的延遲（毫秒）。",
+    "settings.handleSide.name": "控制柄位置",
+    "settings.handleSide.desc": "控制柄顯示在內文的哪一側。",
+    "settings.handleSide.left": "左側",
+    "settings.handleSide.right": "右側",
+    "settings.handleAlwaysVisible.name": "永遠顯示控制柄",
+    "settings.handleAlwaysVisible.desc": "將控制柄固定在游標所在的區塊上，滑鼠移開時也不隱藏。",
     "settings.dateFormat.name": "日期格式",
     "settings.dateFormat.desc": "今天/昨天/明天的日期格式。",
     "settings.timeFormat.name": "時間格式",
@@ -20,6 +26,12 @@ const zhTw: LocaleType = {
     "handles.dragReorder": "拖曳以重排",
     "handles.switchToParagraph": "切換到段落模式",
     "handles.switchToLine": "切換到行模式",
+    "handles.fold": "摺疊區塊",
+    "handles.unfold": "展開區塊",
+    "fold.expand": "點擊展開",
+    "settings.foldHandle.name": "顯示摺疊箭頭",
+    "settings.foldHandle.desc": "控制柄上的箭頭，可將區塊摺疊為首行。僅在有內容可摺疊的區塊上顯示。",
+    "drag.blocks": "{n} 個區塊",
 
     "menu.turnInto": "轉換成",
     "menu.insert": "新增",
@@ -30,6 +42,7 @@ const zhTw: LocaleType = {
 
     "menu.paragraph": "文字",
     "menu.headings": "標題",
+    "menu.custom": "自訂",
     "menu.h1": "標題 1",
     "menu.h2": "標題 2",
     "menu.h3": "標題 3",
@@ -117,7 +130,23 @@ const zhTw: LocaleType = {
     "command.openInsertMenu": "開啟區塊插入選單",
     "menu.closeMenu": "關閉選單",
     "page.untitled": "未命名",
-    "toc.title": "目錄"
+    "toc.title": "目錄",
+
+    "settings.insertItems.name": "插入選單項目",
+    "settings.insertItems.desc": "拖曳可排序，取消勾選可隱藏。新增項目即可在選單中執行任意 Obsidian 指令。",
+    "settings.addCommand": "新增指令",
+    "settings.resetOrder": "重設排序",
+    "settings.commandMissing": "該指令目前無法使用",
+    "settings.customCommand.title": "自訂插入指令",
+    "settings.customCommand.label": "名稱",
+    "settings.customCommand.command": "指令",
+    "settings.customCommand.commandDesc": "輸入以搜尋 Obsidian 指令。",
+    "settings.customCommand.icon": "圖示",
+    "settings.customCommand.iconDesc": "Lucide 圖示名稱，例如 \"zap\" 或 \"pencil\"。",
+    "settings.customCommand.save": "儲存",
+    "settings.customCommand.cancel": "取消",
+    "settings.customCommand.edit": "編輯",
+    "settings.customCommand.delete": "刪除"
 };
 
 export default zhTw;

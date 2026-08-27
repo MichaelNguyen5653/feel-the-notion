@@ -6,9 +6,13 @@ import {
     allowedIndents,
     pickIndent,
     detectIndentUnit,
+    countBlocks,
+    describeDragGhost,
 } from "./dragRange";
 import { FrameScheduler } from "./frameScheduler";
 import { planBlockMove, MoveSource } from "./planMove";
+import { foldHidingLineEnd } from "./blockFold";
+import { t } from "./locale/helpers";
 
 /**
  * Editor geometry a drag needs but does not itself change.
@@ -91,7 +95,11 @@ export class DragManager {
         // Create ghost element
         this.ghostEl = this.ownerDocument.body.createDiv({
             cls: "block-drag-ghost",
-            text: text.slice(0, 50) + (text.length > 50 ? "..." : "")
+            text: describeDragGhost(
+                text,
+                countBlocks(doc, range.firstLine, range.lastLine),
+                t("drag.blocks")
+            ),
         });
         this.updateGhostPosition(event.clientX, event.clientY);
 
@@ -235,6 +243,15 @@ export class DragManager {
                             targetLine = line.number + 1;
                         }
                     }
+
+                    // Past the midpoint of a FOLDED block's head line, the
+                    // line after it is the first hidden one. The indicator
+                    // would point into the collapsed range and the drop would
+                    // land inside it, where the user cannot see what happened.
+                    // Stepping to the line after the fold puts the block where
+                    // the indicator is actually drawn: below the whole block.
+                    const hiddenUntil = foldHidingLineEnd(this.view, targetLine);
+                    if (hiddenUntil !== null) targetLine = hiddenUntil + 1;
 
                     this.currentTargetLine = targetLine;
 

@@ -16,11 +16,26 @@ Notion-like block editing for Obsidian's Live Preview.
 - **Block-aware keys** — `Cmd+A` selects the block, then the note. `Backspace` at a block's start outdents, then drops the marker, then merges.
 - **Insert menu** — type `/` on an empty block or mid-line, or click the `+`.
 - **Hide syntax markers** — optional: stops text shifting sideways as the caret enters `**bold**`.
+- **Handle side** — the handle can sit on the left or the right of the text, and can be pinned so it never hides when the pointer moves away.
+- **Fold blocks** — a chevron on the handle folds a block to its first line, leaving an ellipsis you click to expand it again.
+- **Move blocks together** — selecting several blocks and dragging any one of their handles moves all of them together.
+- **Custom insert menu** — insert-menu rows can be reordered, hidden, and extended with custom rows that run any Obsidian command. A custom row runs its command on a single click with no confirmation, so binding a destructive one — "Delete current file", say — gives you a one-click delete.
 
 Everything behavioural has a toggle in settings.
 
 <details>
 <summary><b>Change logs</b></summary>
+
+### 0.5.0
+
+Bug fixes and improvements.
+
+New features:
+
+- Handle position and always-on pinning
+- Block folding from the handle
+- Multi-block drag
+- Insert menu reordering, hiding and custom commands
 
 ### 0.4.0
 
