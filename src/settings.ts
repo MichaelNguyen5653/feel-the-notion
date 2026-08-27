@@ -1,7 +1,8 @@
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import NotionBlock from './main';
 import { t } from './locale/helpers';
-import { CustomInsertItem } from './insertRegistry';
+import { BUILTIN_ITEMS, CustomInsertItem, resolveMenuItems } from './insertRegistry';
+import { InsertCommandModal } from './insertCommandModal';
 
 export interface BlockPluginSettings {
     enabled: boolean;
@@ -295,6 +296,133 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.embedAttachments = value;
                     await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t('settings.insertItems.name'))
+            .setDesc(t('settings.insertItems.desc'))
+            .setHeading();
+
+        this.renderInsertItemList(containerEl);
+    }
+
+    /**
+     * The insert menu's rows, reorderable and individually switchable.
+     *
+     * Order is stored as a full id list rather than as a sparse set of moves:
+     * resolveMenuItems appends anything the list does not name, so a partial
+     * list still works, but writing the whole list keeps what is stored and
+     * what is shown identical.
+     */
+    private renderInsertItemList(containerEl: HTMLElement): void {
+        const settings = this.plugin.settings;
+        const listEl = containerEl.createDiv({ cls: 'ftn-insert-item-list' });
+
+        // Hidden items must appear in this list or they could never be turned
+        // back on, so it is resolved with an empty hidden set.
+        const items = resolveMenuItems(BUILTIN_ITEMS, settings.insertCustom, settings.insertOrder, [], (key) => t(key));
+        const order = items.map((item) => item.id);
+
+        const persist = async (nextOrder: string[]) => {
+            settings.insertOrder = nextOrder;
+            await this.plugin.saveSettings();
+            this.display();
+        };
+
+        items.forEach((item, index) => {
+            const row = listEl.createDiv({ cls: 'ftn-insert-item-row', attr: { draggable: 'true' } });
+            row.dataset.index = String(index);
+
+            setIcon(row.createSpan({ cls: 'ftn-insert-item-grip' }), 'grip-vertical');
+            setIcon(row.createSpan({ cls: 'ftn-insert-item-icon' }), item.icon);
+            row.createSpan({ cls: 'ftn-insert-item-label', text: item.label });
+
+            const custom = settings.insertCustom.find((entry) => entry.id === item.id);
+            if (custom) {
+                // A binding whose command has gone (plugin disabled or removed)
+                // stays in the list and says so, rather than disappearing and
+                // taking the user's configuration with it.
+                const commands = (this.app as unknown as {
+                    commands?: { commands?: Record<string, unknown> };
+                }).commands?.commands;
+                if (commands && !(custom.commandId in commands)) {
+                    row.createSpan({ cls: 'ftn-insert-item-warning', text: t('settings.commandMissing') });
+                }
+            }
+
+            const controls = row.createDiv({ cls: 'ftn-insert-item-controls' });
+
+            const toggle = controls.createEl('input', { attr: { type: 'checkbox' } });
+            toggle.checked = !settings.insertHidden.includes(item.id);
+            toggle.addEventListener('change', async () => {
+                settings.insertHidden = toggle.checked
+                    ? settings.insertHidden.filter((id) => id !== item.id)
+                    : [...settings.insertHidden, item.id];
+                await this.plugin.saveSettings();
+            });
+
+            if (custom) {
+                const editBtn = controls.createDiv({ cls: 'ftn-insert-item-button', attr: { 'aria-label': t('settings.customCommand.edit') } });
+                setIcon(editBtn, 'pencil');
+                editBtn.addEventListener('click', () => {
+                    new InsertCommandModal(this.app, custom, async (updated) => {
+                        settings.insertCustom = settings.insertCustom.map((entry) =>
+                            entry.id === updated.id ? updated : entry);
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }).open();
+                });
+
+                const deleteBtn = controls.createDiv({ cls: 'ftn-insert-item-button is-danger', attr: { 'aria-label': t('settings.customCommand.delete') } });
+                setIcon(deleteBtn, 'trash-2');
+                deleteBtn.addEventListener('click', async () => {
+                    settings.insertCustom = settings.insertCustom.filter((entry) => entry.id !== custom.id);
+                    settings.insertOrder = order.filter((id) => id !== custom.id);
+                    settings.insertHidden = settings.insertHidden.filter((id) => id !== custom.id);
+                    await this.plugin.saveSettings();
+                    this.display();
+                });
+            }
+
+            row.addEventListener('dragstart', (event) => {
+                event.dataTransfer?.setData('text/plain', String(index));
+                row.addClass('is-dragging');
+            });
+            row.addEventListener('dragend', () => row.removeClass('is-dragging'));
+            row.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                row.addClass('is-drop-target');
+            });
+            row.addEventListener('dragleave', () => row.removeClass('is-drop-target'));
+            row.addEventListener('drop', async (event) => {
+                event.preventDefault();
+                row.removeClass('is-drop-target');
+                const from = Number(event.dataTransfer?.getData('text/plain'));
+                if (!Number.isInteger(from) || from === index) return;
+                const next = [...order];
+                const [moved] = next.splice(from, 1);
+                next.splice(index, 0, moved);
+                await persist(next);
+            });
+        });
+
+        new Setting(containerEl)
+            .addButton((button) => button
+                .setButtonText(t('settings.addCommand'))
+                .onClick(() => {
+                    new InsertCommandModal(this.app, null, async (item: CustomInsertItem) => {
+                        settings.insertCustom = [...settings.insertCustom, item];
+                        await this.plugin.saveSettings();
+                        this.display();
+                    }).open();
+                }))
+            .addButton((button) => button
+                .setButtonText(t('settings.resetOrder'))
+                .onClick(async () => {
+                    settings.insertOrder = [];
+                    settings.insertHidden = [];
+                    await this.plugin.saveSettings();
+                    this.display();
                 }));
     }
 }

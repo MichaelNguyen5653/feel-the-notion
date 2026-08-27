@@ -130,7 +130,23 @@ const zh: LocaleType = {
     "command.openInsertMenu": "打开块插入菜单",
     "menu.closeMenu": "关闭菜单",
     "page.untitled": "未命名",
-    "toc.title": "目录"
+    "toc.title": "目录",
+
+    "settings.insertItems.name": "插入菜单项",
+    "settings.insertItems.desc": "拖动可排序，取消勾选可隐藏。添加条目即可在菜单中执行任意 Obsidian 命令。",
+    "settings.addCommand": "添加命令",
+    "settings.resetOrder": "重置排序",
+    "settings.commandMissing": "该命令目前不可用",
+    "settings.customCommand.title": "自定义插入命令",
+    "settings.customCommand.label": "名称",
+    "settings.customCommand.command": "命令",
+    "settings.customCommand.commandDesc": "输入以搜索 Obsidian 命令。",
+    "settings.customCommand.icon": "图标",
+    "settings.customCommand.iconDesc": "Lucide 图标名称，例如 \"zap\" 或 \"pencil\"。",
+    "settings.customCommand.save": "保存",
+    "settings.customCommand.cancel": "取消",
+    "settings.customCommand.edit": "编辑",
+    "settings.customCommand.delete": "删除"
 };
 
 export default zh;

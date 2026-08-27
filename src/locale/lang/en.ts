@@ -128,7 +128,23 @@ const en = {
     "command.openInsertMenu": "Open block insert menu",
     "menu.closeMenu": "Close menu",
     "page.untitled": "Untitled",
-    "toc.title": "Table of contents"
+    "toc.title": "Table of contents",
+
+    "settings.insertItems.name": "Insert menu items",
+    "settings.insertItems.desc": "Drag to reorder. Uncheck to hide a row. Add a row to run any Obsidian command from the menu.",
+    "settings.addCommand": "Add command",
+    "settings.resetOrder": "Reset order",
+    "settings.commandMissing": "Command unavailable",
+    "settings.customCommand.title": "Custom insert command",
+    "settings.customCommand.label": "Name",
+    "settings.customCommand.command": "Command",
+    "settings.customCommand.commandDesc": "Start typing to search Obsidian's commands.",
+    "settings.customCommand.icon": "Icon",
+    "settings.customCommand.iconDesc": "A Lucide icon name, e.g. \"zap\" or \"pencil\".",
+    "settings.customCommand.save": "Save",
+    "settings.customCommand.cancel": "Cancel",
+    "settings.customCommand.edit": "Edit",
+    "settings.customCommand.delete": "Delete"
 };
 
 export default en;
