@@ -17,6 +17,7 @@ import {
 	OPPOSITE_SIDE_SLACK,
 	HANDLE_LEFT_GAP,
 	HANDLE_RIGHT_GAP,
+	HANDLE_ROW_WIDTH,
 } from "./.build/handleZone.js";
 
 /** An editor 800px wide with 700px of content inset 50px from its left edge. */
@@ -68,6 +69,24 @@ test("left places the handle in the gutter before the content", () => {
 	assert.equal(handleOffsetX(M, "left"), 50 - HANDLE_LEFT_GAP);
 });
 
+/** Readable line length on: 700px of content centred in a 1400px editor. */
+const WIDE = {
+	viewWidth: 1400,
+	viewHeight: 600,
+	contentOffsetLeft: 350,
+	contentWidth: 700,
+};
+
 test("right places the handle past the content's far edge", () => {
-	assert.equal(handleOffsetX(M, "right"), 50 + 700 + HANDLE_RIGHT_GAP);
+	// 350 + 700 + 12 = 1062, and the row ends at 1130, well inside 1400.
+	assert.equal(handleOffsetX(WIDE, "right"), 350 + 700 + HANDLE_RIGHT_GAP);
+});
+
+test("right is clamped back inside a view the content nearly fills", () => {
+	// M's content ends at 750 in an 800px editor, so the unclamped position
+	// would push most of the row past the right edge — readable line length
+	// off, or a narrow sidebar.
+	const x = handleOffsetX(M, "right");
+	assert.ok(x < M.contentOffsetLeft + M.contentWidth + HANDLE_RIGHT_GAP);
+	assert.ok(x + HANDLE_ROW_WIDTH <= M.viewWidth);
 });

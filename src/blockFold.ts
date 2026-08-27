@@ -117,8 +117,14 @@ function foldAt(folds: DecorationSet, from: number): { from: number; to: number 
 	return found;
 }
 
-/** Document offsets a fold at `lineNo` would cover, or null. */
-function foldOffsets(view: EditorView, lineNo: number): { from: number; to: number } | null {
+/**
+ * Document offsets a fold at `lineNo` would cover, or null.
+ *
+ * Exported because the answer is a document walk — for a heading, forward to
+ * the next same-or-shallower one — and the handle needs to cache it rather
+ * than pay for it on every reposition.
+ */
+export function foldOffsetsAtLine(view: EditorView, lineNo: number): { from: number; to: number } | null {
 	const range = foldableRange(view.state.doc, lineNo);
 	if (!range) return null;
 	return {
@@ -127,11 +133,47 @@ function foldOffsets(view: EditorView, lineNo: number): { from: number; to: numb
 	};
 }
 
-export function isFoldedAtLine(view: EditorView, lineNo: number): boolean {
+/**
+ * Whether a fold currently starts exactly at `from`.
+ *
+ * Cheap: a range lookup, no document walk. Callers that already hold the
+ * offsets from foldOffsetsAtLine use this instead of isFoldedAtLine, which
+ * recomputes them.
+ */
+export function isFoldActiveAt(view: EditorView, from: number): boolean {
 	const folds = view.state.field(foldField, false);
-	if (!folds) return false;
-	const offsets = foldOffsets(view, lineNo);
-	return offsets !== null && foldAt(folds, offsets.from) !== null;
+	return !!folds && foldAt(folds, from) !== null;
+}
+
+/**
+ * Last line of the fold that HIDES `lineNo`, or null when the line is visible.
+ *
+ * The head line of a fold is visible and so returns null; only the lines the
+ * ellipsis stands over count as hidden.
+ */
+export function foldHidingLineEnd(view: EditorView, lineNo: number): number | null {
+	const folds = view.state.field(foldField, false);
+	if (!folds) return null;
+
+	const doc = view.state.doc;
+	if (lineNo < 1 || lineNo > doc.lines) return null;
+	const from = doc.line(lineNo).from;
+
+	let last: number | null = null;
+	folds.between(from, from, (foldFrom, foldTo) => {
+		// A fold runs from the END of its head line to the end of its last, so
+		// the head line's own start sits before foldFrom and is not hidden.
+		if (foldFrom < from && from <= foldTo) {
+			last = doc.lineAt(foldTo).number;
+			return false;
+		}
+	});
+	return last;
+}
+
+export function isFoldedAtLine(view: EditorView, lineNo: number): boolean {
+	const offsets = foldOffsetsAtLine(view, lineNo);
+	return offsets !== null && isFoldActiveAt(view, offsets.from);
 }
 
 /** Folds or unfolds the block at `lineNo`. Returns false when it is not foldable. */
@@ -139,7 +181,7 @@ export function toggleFoldAtLine(view: EditorView, lineNo: number): boolean {
 	const folds = view.state.field(foldField, false);
 	if (!folds) return false;
 
-	const offsets = foldOffsets(view, lineNo);
+	const offsets = foldOffsetsAtLine(view, lineNo);
 	if (!offsets) return false;
 
 	const existing = foldAt(folds, offsets.from);
@@ -151,13 +193,18 @@ export function toggleFoldAtLine(view: EditorView, lineNo: number): boolean {
 	return true;
 }
 
+/**
+ * NO atomicRanges HERE, DELIBERATELY.
+ *
+ * Registering the folds as atomic ranges makes arrowing past a fold skip the
+ * hidden positions, which reads better — but @codemirror/commands' skipAtomic
+ * widens a deletion that lands strictly inside an atomic range to the WHOLE
+ * range. Delete at the end of a folded heading would then take out the entire
+ * hidden section: the visible line looks untouched, nothing is on screen to
+ * show what went, and Obsidian autosaves it. @codemirror/language's own
+ * codeFolding() does not register atomicRanges either, for the same reason.
+ * A stiffer arrow key is the cheaper cost.
+ */
 export function blockFoldExtension(): Extension[] {
-	return [
-		foldField,
-		// Without this the caret still visits the hidden positions, so arrowing
-		// past a folded block appears to stall with nothing moving on screen.
-		EditorView.atomicRanges.of(
-			(view) => view.state.field(foldField, false) ?? Decoration.none
-		),
-	];
+	return [foldField];
 }

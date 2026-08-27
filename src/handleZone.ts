@@ -26,8 +26,25 @@ export interface ZoneMetrics {
 	contentWidth: number;
 }
 
-/** Gutter width between the content and a left-side handle. */
-export const HANDLE_LEFT_GAP = 52;
+/**
+ * Width of the whole handle row: three 20px buttons with two 4px gaps.
+ *
+ * The row grows away from its anchor, so every placement has to budget for
+ * the full width even when the "+" or the chevron is currently switched off —
+ * both can reappear without the handle moving.
+ */
+export const HANDLE_ROW_WIDTH = 68;
+
+/**
+ * Gutter width between the content and a left-side handle.
+ *
+ * Must clear HANDLE_ROW_WIDTH, because a left-side handle is anchored at its
+ * own left edge and grows rightward, toward the text. At the old value of 52,
+ * tuned when the row was two buttons wide, the third button pushed the grip
+ * over the first stretch of the hovered line and it swallowed clicks meant for
+ * the caret. The remainder is breathing room between the grip and the text.
+ */
+export const HANDLE_LEFT_GAP = 76;
 
 /** Gap between the content's far edge and a right-side handle. */
 export const HANDLE_RIGHT_GAP = 12;
@@ -64,9 +81,23 @@ export function isInsideHandleZone(
 	return x >= -leftSlack && x <= m.viewWidth + rightSlack;
 }
 
-/** The handle's left position, in the scroller's coordinate space. */
+/**
+ * The handle's left position, in the scroller's coordinate space.
+ *
+ * The right side is clamped so the whole row stays inside the view. Without
+ * the clamp, any layout where the content nearly fills its editor — readable
+ * line length switched off, a narrow sidebar, a split pane — put the row past
+ * the right edge, where it either forced horizontal overflow or was simply
+ * not there, and the side setting read as broken.
+ *
+ * The left side is deliberately NOT clamped to zero. A left-side handle lives
+ * in the gutter, which is outside the content box by design, and on a narrow
+ * editor that gutter legitimately starts left of the scroller's origin;
+ * clamping would drag the row back on top of the text instead.
+ */
 export function handleOffsetX(m: ZoneMetrics, side: HandleSide): number {
-	return side === "right"
-		? m.contentOffsetLeft + m.contentWidth + HANDLE_RIGHT_GAP
-		: m.contentOffsetLeft - HANDLE_LEFT_GAP;
+	if (side !== "right") return m.contentOffsetLeft - HANDLE_LEFT_GAP;
+
+	const past = m.contentOffsetLeft + m.contentWidth + HANDLE_RIGHT_GAP;
+	return Math.min(past, m.viewWidth - HANDLE_ROW_WIDTH - 4);
 }

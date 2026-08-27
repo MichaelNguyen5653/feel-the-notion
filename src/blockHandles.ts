@@ -11,8 +11,13 @@ import { DragManager } from "./dragDrop";
 import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
 import { handleOffsetX, isInsideHandleZone } from "./handleZone";
-import { isFoldedAtLine, toggleFoldAtLine } from "./blockFold";
-import { foldableRange } from "./foldRange";
+import {
+    foldBlockEffect,
+    foldOffsetsAtLine,
+    isFoldActiveAt,
+    toggleFoldAtLine,
+    unfoldBlockEffect,
+} from "./blockFold";
 
 /**
  * Editor geometry that a pointer move needs but cannot change.
@@ -73,6 +78,32 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
 
     /** Last fold state written to the chevron, so an unchanged state writes nothing. */
     foldShown: "none" | "folded" | "unfolded" | null = null;
+
+    /**
+     * Bumped on every document change, as a cache key for anything derived
+     * from the document. Cheaper than remembering the doc itself, and enough:
+     * a walk's answer can only go stale when the text under it moves.
+     */
+    docGeneration = 0;
+
+    /**
+     * What a fold on the hovered line would cover, and what that was measured
+     * against.
+     *
+     * WHY IT IS WORTH CACHING
+     * foldOffsetsAtLine walks the document — for a heading, forward to the
+     * next heading at the same depth or shallower, which under a lone `# H1`
+     * is every remaining line of the note. updatePosition needs the answer on
+     * every reposition, and in always-visible mode that is once per keystroke.
+     * The answer depends only on the line and the text, so a fold being opened
+     * or closed does not invalidate it — only which fold is *active* changes,
+     * and that is a range lookup rather than a walk.
+     */
+    foldOffsetsCache: {
+        line: number;
+        generation: number;
+        offsets: { from: number; to: number } | null;
+    } | null = null;
 
     /** Last side written to the wrapper, so an unchanged setting writes nothing. */
     sideShown: "left" | "right" | null = null;
@@ -276,14 +307,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     }
 
     update(update: ViewUpdate) {
+        if (update.docChanged) this.docGeneration++;
+
         // Any of these can move the line the handle is pinned to, so the cached
         // rects and the hovered band both stop being trustworthy.
-        if (update.docChanged || update.viewportChanged || update.geometryChanged) {
-            this.invalidateMetrics();
-            if (this.hoveredLine !== null) {
-                this.updatePosition(update.view);
-            }
-        }
+        const movedUnderUs =
+            update.docChanged || update.viewportChanged || update.geometryChanged;
+        if (movedUnderUs) this.invalidateMetrics();
 
         // saveSettings() calls app.workspace.updateOptions(), which reconfigures
         // the editor and fires update() — the only place this transition is
@@ -295,15 +325,51 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         }
         this.alwaysVisibleShown = plugin.settings.handleAlwaysVisible;
 
-        if (!plugin.settings.handleAlwaysVisible) return;
-
         // In always-visible mode the caret, not the pointer, decides where the
         // handle lives. Also runs when the handle isn't currently placed
         // anywhere, so re-enabling the setting immediately puts it back on the
         // caret's block instead of waiting for the next selection or doc change.
-        if (update.selectionSet || update.docChanged || this.hoveredLine === null) {
+        const followsCaret =
+            plugin.settings.handleAlwaysVisible &&
+            (update.selectionSet || update.docChanged || this.hoveredLine === null);
+
+        // A fold toggle is a decoration-only transaction and need not report
+        // any of the flags above, so without this the chevron kept pointing
+        // the wrong way until some unrelated update happened to reposition it.
+        const foldToggled = update.transactions.some((tr) =>
+            tr.effects.some((e) => e.is(foldBlockEffect) || e.is(unfoldBlockEffect))
+        );
+
+        // Exactly one positioning pass per update. followCaret repositions on
+        // its own, and it does so from the caret; running updatePosition first
+        // would repeat every measurement against the line the caret has
+        // already left, which in a long note means two full document walks per
+        // keystroke.
+        if (followsCaret) {
             this.followCaret(update.view);
+            return;
         }
+
+        if ((movedUnderUs || foldToggled) && this.hoveredLine !== null) {
+            this.updatePosition(update.view);
+        }
+    }
+
+    /**
+     * What a fold on `lineNo` would cover, recomputed only when it can differ.
+     *
+     * See foldOffsetsCache: this stands in front of a document walk that
+     * updatePosition would otherwise run on every reposition.
+     */
+    foldOffsetsFor(view: EditorView, lineNo: number): { from: number; to: number } | null {
+        const cached = this.foldOffsetsCache;
+        if (cached && cached.line === lineNo && cached.generation === this.docGeneration) {
+            return cached.offsets;
+        }
+
+        const offsets = foldOffsetsAtLine(view, lineNo);
+        this.foldOffsetsCache = { line: lineNo, generation: this.docGeneration, offsets };
+        return offsets;
     }
 
     /**
@@ -371,9 +437,12 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // The chevron is only meaningful where folding would hide
             // something, so a lone paragraph gets no button rather than a
             // button that visibly does nothing.
-            const foldState = !plugin.settings.foldHandle || !foldableRange(view.state.doc, this.hoveredLine)
+            const foldOffsets = plugin.settings.foldHandle
+                ? this.foldOffsetsFor(view, this.hoveredLine)
+                : null;
+            const foldState = !foldOffsets
                 ? "none"
-                : isFoldedAtLine(view, this.hoveredLine)
+                : isFoldActiveAt(view, foldOffsets.from)
                 ? "folded"
                 : "unfolded";
 
@@ -434,7 +503,6 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 this.hideTimeout = null;
             }
             if (this.handleEl.classList.contains("is-hidden")) {
-                this.handleEl.classList.remove("is-hidden");
                 // If it was fully nullified, try to recover the line from current Y
                 if (this.hoveredLine === null) {
                     const pos = view.posAtCoords({ x: m.contentLeft + 5, y: clientY });
@@ -446,7 +514,13 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                         }
                     }
                 }
-                this.updatePosition(view);
+                // Unhide only once updatePosition confirms it wrote a transform,
+                // for the same reason followCaret does: unhiding first parks a
+                // positionless handle at the wrapper's default top:0/left:0
+                // whenever coordsAtPos cannot resolve the line.
+                if (this.updatePosition(view)) {
+                    this.handleEl.classList.remove("is-hidden");
+                }
             }
             return;
         }
@@ -486,8 +560,10 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // differently-numbered line.
             if (this.hoveredLine !== line.number || isHidden) {
                 this.hoveredLine = line.number;
-                this.handleEl.classList.remove("is-hidden");
-                this.updatePosition(view);
+                // Unhide only on a confirmed reposition — see followCaret.
+                if (this.updatePosition(view)) {
+                    this.handleEl.classList.remove("is-hidden");
+                }
             }
 
             if (this.hideTimeout) {

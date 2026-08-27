@@ -154,6 +154,32 @@ export function resolveMenuItems(
 	return result;
 }
 
+/**
+ * `order` with the id at `from` moved to sit where the id at `to` was.
+ *
+ * WHY THIS IS NOT INLINE IN THE DROP HANDLER ANY MORE
+ * The correction below has already shipped one off-by-one. `to` names a
+ * position in the array as it was BEFORE the dragged id came out of it, so
+ * once it is spliced out, everything after it has shifted up by one. Without
+ * the adjustment a downward drag lands the row after its target while an
+ * upward drag lands before it — and the user asked for the same thing both
+ * times. That is a rule worth a test, and a test needs a function.
+ *
+ * Indices outside the array, or equal to each other, are a no-op: nothing was
+ * asked for, so nothing changes.
+ */
+export function reorderIds(order: readonly string[], from: number, to: number): string[] {
+	const next = [...order];
+	if (!Number.isInteger(from) || !Number.isInteger(to)) return next;
+	if (from === to) return next;
+	if (from < 0 || from >= order.length) return next;
+	if (to < 0 || to >= order.length) return next;
+
+	const [moved] = next.splice(from, 1);
+	next.splice(to - (from < to ? 1 : 0), 0, moved);
+	return next;
+}
+
 /** Consecutive runs of the same section, so reordering moves headers with rows. */
 export function groupBySection(items: readonly ResolvedItem[]): ResolvedSection[] {
 	const sections: ResolvedSection[] = [];

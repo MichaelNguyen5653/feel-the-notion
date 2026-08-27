@@ -14,6 +14,7 @@ import {
 	DEFAULT_INSERT_ORDER,
 	resolveMenuItems,
 	groupBySection,
+	reorderIds,
 } from "./.build/insertRegistry.js";
 
 /** Stands in for t(): returns the key so assertions can name it directly. */
@@ -119,4 +120,56 @@ test("grouping collects consecutive runs of the same section", () => {
 
 test("grouping an empty list yields no sections", () => {
 	assert.deepEqual(groupBySection([]), []);
+});
+
+/**
+ * Reordering.
+ *
+ * The rule under test is that a drop means "put the dragged row where the row
+ * I dropped on is", in both directions. The index the drop handler reports was
+ * measured before the dragged row came out of the array, and forgetting to
+ * correct for that is a bug this list has already shipped once (0397fcf).
+ */
+
+const ABCD = ["A", "B", "C", "D"];
+const joined = (list) => list.join("");
+
+test("dragging down lands the row on its target, not after it", () => {
+	assert.equal(joined(reorderIds(ABCD, 0, 2)), "BACD");
+});
+
+test("dragging up lands the row on its target", () => {
+	assert.equal(joined(reorderIds(ABCD, 3, 1)), "ADBC");
+});
+
+test("dragging to the last position", () => {
+	assert.equal(joined(reorderIds(ABCD, 0, 3)), "BCAD");
+});
+
+test("dragging to the first position", () => {
+	assert.equal(joined(reorderIds(ABCD, 3, 0)), "DABC");
+});
+
+test("swapping neighbours downward", () => {
+	assert.equal(joined(reorderIds(ABCD, 1, 2)), "ABCD");
+});
+
+test("a drop on the row itself changes nothing", () => {
+	assert.deepEqual(reorderIds(ABCD, 2, 2), ABCD);
+});
+
+test("out-of-range indices change nothing", () => {
+	// A dataTransfer payload that did not parse arrives as NaN, and a stale
+	// index can outlive the list it was measured against.
+	assert.deepEqual(reorderIds(ABCD, -1, 2), ABCD);
+	assert.deepEqual(reorderIds(ABCD, 4, 2), ABCD);
+	assert.deepEqual(reorderIds(ABCD, 1, -1), ABCD);
+	assert.deepEqual(reorderIds(ABCD, 1, 4), ABCD);
+	assert.deepEqual(reorderIds(ABCD, NaN, 2), ABCD);
+});
+
+test("reordering does not mutate the order it was given", () => {
+	const original = [...ABCD];
+	reorderIds(original, 0, 3);
+	assert.deepEqual(original, ABCD);
 });

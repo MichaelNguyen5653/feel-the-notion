@@ -1,4 +1,4 @@
-import { setIcon } from "obsidian";
+import { Notice, setIcon } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import NotionBlock from "./main";
 import {
@@ -345,7 +345,13 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
         const commands = (this.plugin.app as unknown as {
             commands?: { executeCommandById(id: string): boolean };
         }).commands;
-        commands?.executeCommandById(commandId);
+        // The typed query was removed above, before the command ran. A binding
+        // whose command has gone — its plugin disabled or uninstalled — would
+        // otherwise eat the user's text and do nothing at all, with no way to
+        // tell that from a command that simply had no visible effect.
+        if (!commands?.executeCommandById(commandId)) {
+            new Notice(t("settings.commandMissing"));
+        }
 
         // Already closed above; returning true stops activateItem closing twice.
         return true;
