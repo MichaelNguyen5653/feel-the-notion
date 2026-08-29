@@ -439,3 +439,10 @@ body.is-dragging-block * {
     align-items: center;
     color: var(--text-muted);
 }
+
+/* Command picker rows. The id line is what tells apart the several plugins
+   that each ship a command called "Insert table". */
+.ftn-command-suggest-id {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}

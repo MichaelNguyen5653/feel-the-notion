@@ -1,13 +1,27 @@
 import { AbstractInputSuggest, App, Command, Modal, Setting, setIcon } from "obsidian";
-import { CustomInsertItem } from "./insertRegistry";
+import { COMMAND_PICKER_LIMIT, CustomInsertItem, matchCommands } from "./insertRegistry";
 import { t } from "./locale/helpers";
 
-/** Every command Obsidian currently knows about. Not in the public types. */
+/**
+ * Every registered command, from Obsidian core and from every plugin.
+ *
+ * WHY NOT app.commands.listCommands()
+ * Obsidian defines it as
+ *   Object.values(this.commands).filter(c => !c.checkCallback || c.checkCallback(true))
+ * and addCommand() synthesises a checkCallback for every command registered
+ * with editorCallback or editorCheckCallback, one that returns null when
+ * workspace.activeEditor is falsy and bails out when the note is in preview.
+ *
+ * So listCommands() answers "what could run right now", and while a settings
+ * modal is up that answer drops most editor commands, which is nearly
+ * everything worth binding. Binding is configuration for later, not execution
+ * now, so the picker reads the whole registry instead.
+ */
 function listCommands(app: App): Command[] {
-	const commands = (app as unknown as {
-		commands?: { listCommands(): Command[] };
-	}).commands;
-	return commands?.listCommands() ?? [];
+	const registry = (app as unknown as {
+		commands?: { commands?: Record<string, Command> };
+	}).commands?.commands;
+	return registry ? Object.values(registry) : [];
 }
 
 /** Type-ahead over command names, so the user never has to know an id. */
@@ -18,17 +32,21 @@ class CommandSuggest extends AbstractInputSuggest<Command> {
 		private readonly onPick: (command: Command) => void
 	) {
 		super(app, inputEl);
+		// AbstractInputSuggest renders 100 by default; matchCommands has already
+		// ranked and capped, so let it show what it was given.
+		this.limit = COMMAND_PICKER_LIMIT;
 	}
 
 	protected getSuggestions(query: string): Command[] {
-		const needle = query.toLowerCase();
-		return listCommands(this.app)
-			.filter((command) => command.name.toLowerCase().includes(needle))
-			.slice(0, 50);
+		return matchCommands(listCommands(this.app), query);
 	}
 
 	renderSuggestion(command: Command, el: HTMLElement): void {
-		el.setText(command.name);
+		// The id under the name disambiguates the several plugins that ship a
+		// command called "Insert table" or "Toggle", and it is the only thing
+		// on screen that says which plugin a row came from.
+		el.createDiv({ cls: "ftn-command-suggest-name", text: command.name });
+		el.createDiv({ cls: "ftn-command-suggest-id", text: command.id });
 	}
 
 	selectSuggestion(command: Command): void {
@@ -53,6 +71,7 @@ export class InsertCommandModal extends Modal {
 	private commandId: string;
 	private readonly id: string;
 	private iconPreviewEl: HTMLElement | null = null;
+	private labelInputEl: HTMLInputElement | null = null;
 
 	constructor(
 		app: App,
@@ -73,11 +92,13 @@ export class InsertCommandModal extends Modal {
 
 		new Setting(contentEl)
 			.setName(t("settings.customCommand.label"))
-			.addText((text) => text
-				.setValue(this.label)
-				.onChange((value) => {
-					this.label = value;
-				}));
+			.addText((text) => {
+				this.labelInputEl = text.inputEl;
+				text.setValue(this.label)
+					.onChange((value) => {
+						this.label = value;
+					});
+			});
 
 		const commandName = listCommands(this.app)
 			.find((command) => command.id === this.commandId)?.name ?? "";
@@ -89,6 +110,13 @@ export class InsertCommandModal extends Modal {
 				text.setValue(commandName);
 				new CommandSuggest(this.app, text.inputEl, (command) => {
 					this.commandId = command.id;
+					// Save refuses a row with no label, so leaving the name
+					// blank made the button look broken. The command's own name
+					// is what the user picked it by, and they can still edit it.
+					if (!this.label.trim() && this.labelInputEl) {
+						this.label = command.name;
+						this.labelInputEl.value = command.name;
+					}
 					// A command with its own icon is almost always better than
 					// the placeholder, and the user can still overwrite it.
 					if (command.icon && this.icon === "zap") {

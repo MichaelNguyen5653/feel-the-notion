@@ -271,3 +271,51 @@ export function applyOrder(layout: InsertLayout, order: readonly string[]): Inse
 	const live = new Set<string>([...BUILTIN_IDS, ...layout.insertCustom.map((entry) => entry.id)]);
 	return { ...layout, insertOrder: order.filter((id) => live.has(id)) };
 }
+
+/** The shape of an Obsidian command this module needs. */
+export interface PickableCommand {
+	id: string;
+	name?: string;
+}
+
+/** Rows the command picker offers, ranked. */
+export const COMMAND_PICKER_LIMIT = 200;
+
+/**
+ * Ranked substring match over command names.
+ *
+ * WHY RANKING, AND WHY A LIMIT THAT COMES LAST
+ * The picker used to filter and then take the first 50 in registry order,
+ * which is registration order: core commands first, every plugin after. A
+ * short query therefore filled all 50 slots with core commands and the
+ * plugin command the user was looking for was never on screen. Ranking first
+ * and cutting last means the limit trims the worst matches rather than the
+ * most recently installed plugin.
+ *
+ * Obsidian names plugin commands "Plugin: Thing", so a plain substring test
+ * over the whole name lets the user search by the plugin, by the action, or
+ * by both. An earlier match position wins, because the word someone typed is
+ * usually the word the row they want leads with.
+ */
+export function matchCommands<T extends PickableCommand>(
+	commands: readonly T[],
+	query: string,
+	limit: number = COMMAND_PICKER_LIMIT
+): T[] {
+	const needle = query.trim().toLowerCase();
+
+	const scored: { command: T; at: number; name: string }[] = [];
+	for (const command of commands) {
+		// A command with no name cannot be offered by name, and one has been
+		// seen in the wild from a half-registered plugin.
+		if (!command.name) continue;
+		const name = command.name.toLowerCase();
+		const at = needle === "" ? 0 : name.indexOf(needle);
+		if (at === -1) continue;
+		scored.push({ command, at, name });
+	}
+
+	scored.sort((a, b) => a.at - b.at || a.name.localeCompare(b.name));
+
+	return scored.slice(0, limit).map((entry) => entry.command);
+}

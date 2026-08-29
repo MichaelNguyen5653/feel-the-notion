@@ -20,6 +20,7 @@ import {
 	setItemHidden,
 	resetItemLayout,
 	applyOrder,
+	matchCommands,
 	reorderIds,
 } from "./.build/insertRegistry.js";
 
@@ -288,4 +289,74 @@ test("a reorder computed from a stale row list cannot resurrect a deleted id", (
 	const staleOrder = ["h1", "c1", "h2"];
 	const next = applyOrder(afterDelete, staleOrder);
 	assert.deepEqual(next.insertOrder, ["h1", "h2"]);
+});
+
+// ── command matching ───────────────────────────────────────────────────────
+//
+// The picker used app.commands.listCommands(), which Obsidian defines as
+// Object.values(this.commands).filter(c => !c.checkCallback || c.checkCallback(true)).
+// addCommand() synthesises a checkCallback for every editorCallback /
+// editorCheckCallback command that returns null when workspace.activeEditor is
+// falsy, so listCommands() hides every editor command whenever no editor is
+// active. That is most of what anyone would want to bind. The picker now reads
+// the full registry instead, and this is the matching that sits in front of it.
+
+const cmd = (id, name) => ({ id, name });
+
+const CMDS = [
+	cmd("editor:insert-table", "Insert table"),
+	cmd("editor:toggle-bold", "Toggle bold"),
+	cmd("excalidraw:new", "Excalidraw: Create new drawing"),
+	cmd("templater:insert", "Templater: Insert template"),
+	cmd("workspace:split", "Split right"),
+];
+
+test("an empty query offers everything", () => {
+	assert.equal(matchCommands(CMDS, "").length, CMDS.length);
+});
+
+test("matching is case-insensitive", () => {
+	assert.deepEqual(matchCommands(CMDS, "INSERT TABLE").map((c) => c.id), ["editor:insert-table"]);
+});
+
+test("a plugin's commands are findable by the plugin's name", () => {
+	// Obsidian names plugin commands "Plugin: Thing", so the prefix is the
+	// only handle a user has on "show me everything Excalidraw can do".
+	assert.deepEqual(matchCommands(CMDS, "excalidraw").map((c) => c.id), ["excalidraw:new"]);
+});
+
+test("a plugin's commands are also findable by the part after the prefix", () => {
+	assert.deepEqual(matchCommands(CMDS, "create new").map((c) => c.id), ["excalidraw:new"]);
+});
+
+test("an earlier match outranks a later one", () => {
+	// Typing "insert" should put "Insert table" above "Templater: Insert
+	// template", because the word the user typed is what that row leads with.
+	const ids = matchCommands(CMDS, "insert").map((c) => c.id);
+	assert.deepEqual(ids, ["editor:insert-table", "templater:insert"]);
+});
+
+test("equal-ranked matches come back alphabetically", () => {
+	const same = [cmd("b", "Zebra thing"), cmd("a", "Apple thing")];
+	assert.deepEqual(matchCommands(same, "thing").map((c) => c.id), ["a", "b"]);
+});
+
+test("the limit caps the result", () => {
+	assert.equal(matchCommands(CMDS, "", 2).length, 2);
+});
+
+test("the limit keeps the best matches, not the first registered", () => {
+	// The old code sliced the registry in registration order, so core commands
+	// crowded out every plugin command before ranking ever happened.
+	const ids = matchCommands(CMDS, "insert", 1).map((c) => c.id);
+	assert.deepEqual(ids, ["editor:insert-table"]);
+});
+
+test("a command with no name is skipped rather than throwing", () => {
+	const ragged = [{ id: "x" }, cmd("y", "Yes")];
+	assert.deepEqual(matchCommands(ragged, "yes").map((c) => c.id), ["y"]);
+});
+
+test("nothing matching gives an empty list", () => {
+	assert.deepEqual(matchCommands(CMDS, "zzzz"), []);
 });
