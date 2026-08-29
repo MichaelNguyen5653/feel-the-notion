@@ -26,6 +26,14 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.6.0
+
+Bug fixes and improvements:
+
+- The drag handle no longer disappears while you reach for it.
+- The settings page no longer jumps back to the top when you add, edit, reorder or delete an insert menu row.
+- Custom insert menu rows can now bind any Obsidian or plugin command, not just the handful that were listed.
+
 ### 0.5.0
 
 Bug fixes and improvements.
