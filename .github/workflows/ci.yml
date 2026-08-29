@@ -1,0 +1,39 @@
+name: CI
+
+# Branch pushes and pull requests only. Releases are a separate workflow keyed
+# on tags, so nothing here can publish anything.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18.x"
+          cache: npm
+
+      # npm ci, not npm install: package.json pins @codemirror/state through an
+      # overrides block, and its comment explains that a second copy of that
+      # package makes the test harness silently test nothing. ci installs the
+      # lockfile exactly; install is free to resolve around it.
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      # Safe on CI: esbuild.config.mjs guards the vault mirror with
+      # fs.existsSync, so a production build with no vault present just writes
+      # main.js to the repo root.
+      - name: Build
+        run: npm run build

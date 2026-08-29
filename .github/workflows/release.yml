@@ -21,9 +21,26 @@ jobs:
         with:
           node-version: "18.x"
 
+      # Obsidian matches the release tag against manifest.json exactly. A
+      # mismatch still produces a GitHub Release, but one Obsidian will not
+      # serve, and nothing anywhere says why — so fail loudly here instead.
+      - name: Verify tag matches manifest version
+        run: |
+          MANIFEST=$(node -p "require('./manifest.json').version")
+          if [ "$GITHUB_REF_NAME" != "$MANIFEST" ]; then
+            echo "Tag '$GITHUB_REF_NAME' does not match manifest.json version '$MANIFEST'"
+            exit 1
+          fi
+          echo "Tag and manifest agree on $MANIFEST"
+
+      # A tag publishes straight to every user with no review in between, so
+      # the checks run here too rather than trusting that CI already saw this
+      # commit. A tag can point at anything.
       - name: Build plugin
         run: |
-          npm install --legacy-peer-deps
+          npm ci --legacy-peer-deps
+          npm run typecheck
+          npm test
           npm run build
 
       - name: Attest assets
