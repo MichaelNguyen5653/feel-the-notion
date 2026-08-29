@@ -143,6 +143,7 @@ const en = {
     "settings.customCommand.iconDesc": "A Lucide icon name, e.g. \"zap\" or \"pencil\".",
     "settings.customCommand.save": "Save",
     "settings.customCommand.cancel": "Cancel",
+    "settings.customCommand.boundTo": "Runs Obsidian “{name}”",
     "settings.customCommand.edit": "Edit",
     "settings.customCommand.delete": "Delete"
 };

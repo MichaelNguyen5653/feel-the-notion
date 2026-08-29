@@ -145,6 +145,7 @@ const zh: LocaleType = {
     "settings.customCommand.iconDesc": "Lucide 图标名称，例如 \"zap\" 或 \"pencil\"。",
     "settings.customCommand.save": "保存",
     "settings.customCommand.cancel": "取消",
+    "settings.customCommand.boundTo": "来自 Obsidian “{name}”",
     "settings.customCommand.edit": "编辑",
     "settings.customCommand.delete": "删除"
 };

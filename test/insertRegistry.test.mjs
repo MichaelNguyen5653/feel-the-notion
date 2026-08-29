@@ -14,6 +14,12 @@ import {
 	DEFAULT_INSERT_ORDER,
 	resolveMenuItems,
 	groupBySection,
+	addCustomItem,
+	updateCustomItem,
+	removeCustomItem,
+	setItemHidden,
+	resetItemLayout,
+	applyOrder,
 	reorderIds,
 } from "./.build/insertRegistry.js";
 
@@ -172,4 +178,114 @@ test("reordering does not mutate the order it was given", () => {
 	const original = [...ABCD];
 	reorderIds(original, 0, 3);
 	assert.deepEqual(original, ABCD);
+});
+
+// ── settings mutations ─────────────────────────────────────────────────────
+//
+// These were inline in the settings tab's DOM event handlers, where each one
+// captured the row list built at render time. That was safe only because every
+// handler ended by re-rendering the whole tab, which threw the stale captures
+// away — and which is exactly the scroll-to-top bug being fixed. Once the list
+// repaints in place, the captures survive, so the transitions have to be pure
+// functions of the CURRENT layout rather than of whatever was on screen when
+// the row was drawn.
+
+const layout = (over = {}) => ({
+	insertOrder: [],
+	insertHidden: [],
+	insertCustom: [],
+	...over,
+});
+
+const custom = (id, over = {}) => ({
+	id,
+	label: `Label ${id}`,
+	icon: "zap",
+	commandId: `cmd:${id}`,
+	...over,
+});
+
+test("adding a custom item appends it", () => {
+	const next = addCustomItem(layout(), custom("c1"));
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c1"]);
+});
+
+test("adding does not mutate the layout it was given", () => {
+	const before = layout();
+	addCustomItem(before, custom("c1"));
+	assert.deepEqual(before.insertCustom, []);
+});
+
+test("updating a custom item replaces it by id and keeps position", () => {
+	const before = layout({ insertCustom: [custom("c1"), custom("c2")] });
+	const next = updateCustomItem(before, custom("c1", { label: "Renamed" }));
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c1", "c2"]);
+	assert.equal(next.insertCustom[0].label, "Renamed");
+});
+
+test("updating an id that is not there changes nothing", () => {
+	const before = layout({ insertCustom: [custom("c1")] });
+	const next = updateCustomItem(before, custom("gone"));
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c1"]);
+});
+
+test("removing a custom item clears it from all three lists", () => {
+	// The order and hidden lists both name ids. Leaving a deleted id behind in
+	// either one means resolveMenuItems keeps skipping past a row that no
+	// longer exists, and the hidden entry would suppress a future custom item
+	// that happened to reuse the id.
+	const before = layout({
+		insertCustom: [custom("c1"), custom("c2")],
+		insertOrder: ["c1", "h1", "c2"],
+		insertHidden: ["c1", "h1"],
+	});
+	const next = removeCustomItem(before, "c1");
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c2"]);
+	assert.deepEqual(next.insertOrder, ["h1", "c2"]);
+	assert.deepEqual(next.insertHidden, ["h1"]);
+});
+
+test("removing a built-in id is refused, since built-ins are hidden not deleted", () => {
+	const before = layout({ insertCustom: [custom("c1")], insertOrder: ["h1", "c1"] });
+	const next = removeCustomItem(before, "h1");
+	assert.deepEqual(next.insertOrder, ["h1", "c1"]);
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c1"]);
+});
+
+test("hiding an item records it once, however many times it is asked", () => {
+	let next = setItemHidden(layout(), "h4", true);
+	next = setItemHidden(next, "h4", true);
+	assert.deepEqual(next.insertHidden, ["h4"]);
+});
+
+test("showing an item removes it from hidden", () => {
+	const next = setItemHidden(layout({ insertHidden: ["h4", "h5"] }), "h4", false);
+	assert.deepEqual(next.insertHidden, ["h5"]);
+});
+
+test("resetting clears order and hidden but keeps custom rows", () => {
+	// Reset is about layout, not about destroying the commands a user bound.
+	const before = layout({
+		insertCustom: [custom("c1")],
+		insertOrder: ["c1", "h1"],
+		insertHidden: ["h1"],
+	});
+	const next = resetItemLayout(before);
+	assert.deepEqual(next.insertOrder, []);
+	assert.deepEqual(next.insertHidden, []);
+	assert.deepEqual(next.insertCustom.map((c) => c.id), ["c1"]);
+});
+
+test("a reorder computed from a stale row list cannot resurrect a deleted id", () => {
+	// The scroll-jump fix stops re-rendering the whole tab, so a drag handler
+	// still holds the id list from when its row was drawn. If a custom row was
+	// deleted in between, that captured list names an id the layout no longer
+	// has, and writing it back would leave a phantom entry in insertOrder.
+	const afterDelete = removeCustomItem(
+		layout({ insertCustom: [custom("c1")], insertOrder: ["h1", "c1", "h2"] }),
+		"c1"
+	);
+	const staleOrder = ["h1", "c1", "h2"];
+	const next = applyOrder(afterDelete, staleOrder);
+	assert.deepEqual(next.insertOrder, ["h1", "h2"]);
 });

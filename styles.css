@@ -385,17 +385,29 @@ body.is-dragging-block * {
     color: var(--text-muted);
 }
 
-.ftn-insert-item-label {
+.ftn-insert-item-text {
     flex: 1;
     min-width: 0;
+}
+
+.ftn-insert-item-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.ftn-insert-item-warning {
-    color: var(--text-error);
+/* Names the command a custom row runs. The label above is the user's own
+   wording, so without this nothing on screen says what the row actually does. */
+.ftn-insert-item-source {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
     font-size: var(--font-ui-smaller);
+}
+
+.ftn-insert-item-source.is-missing {
+    color: var(--text-error);
 }
 
 .ftn-insert-item-controls {

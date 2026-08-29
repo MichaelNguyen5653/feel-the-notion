@@ -195,3 +195,79 @@ export function groupBySection(items: readonly ResolvedItem[]): ResolvedSection[
 
 	return sections;
 }
+
+/**
+ * The three settings the insert-menu list owns.
+ *
+ * WHY THESE TRANSITIONS ARE PURE FUNCTIONS
+ * They used to be inline in the settings tab's DOM event handlers, and each
+ * handler captured the row list built when its row was drawn. That was only
+ * safe because every handler finished by re-rendering the whole tab, throwing
+ * the stale captures away — which is precisely what scrolled the user back to
+ * the top on every add, edit, delete, reorder and reset.
+ *
+ * Once the list repaints in place, those captures survive. So each transition
+ * takes the CURRENT layout and returns a new one, and none of them trusts a
+ * list that arrived from the DOM.
+ */
+export interface InsertLayout {
+	insertOrder: string[];
+	insertHidden: string[];
+	insertCustom: CustomInsertItem[];
+}
+
+/** Ids the plugin ships, which can be hidden and reordered but never deleted. */
+const BUILTIN_IDS = new Set(BUILTIN_ITEMS.map((item) => item.id));
+
+export function addCustomItem(layout: InsertLayout, item: CustomInsertItem): InsertLayout {
+	return { ...layout, insertCustom: [...layout.insertCustom, item] };
+}
+
+export function updateCustomItem(layout: InsertLayout, item: CustomInsertItem): InsertLayout {
+	return {
+		...layout,
+		insertCustom: layout.insertCustom.map((entry) => (entry.id === item.id ? item : entry)),
+	};
+}
+
+/**
+ * Deletes a custom row and every trace of its id.
+ *
+ * A built-in is refused outright: built-ins are hidden, never deleted, and
+ * dropping one from insertOrder here would silently move it to the end of the
+ * menu instead.
+ */
+export function removeCustomItem(layout: InsertLayout, id: string): InsertLayout {
+	if (BUILTIN_IDS.has(id)) return layout;
+
+	return {
+		insertCustom: layout.insertCustom.filter((entry) => entry.id !== id),
+		// Leaving the id in either list would keep resolveMenuItems skipping a
+		// row that no longer exists, and a stale hidden entry would suppress a
+		// future custom item that happened to reuse the id.
+		insertOrder: layout.insertOrder.filter((entry) => entry !== id),
+		insertHidden: layout.insertHidden.filter((entry) => entry !== id),
+	};
+}
+
+export function setItemHidden(layout: InsertLayout, id: string, hidden: boolean): InsertLayout {
+	const without = layout.insertHidden.filter((entry) => entry !== id);
+	return { ...layout, insertHidden: hidden ? [...without, id] : without };
+}
+
+/** Clears the layout without destroying the commands the user bound. */
+export function resetItemLayout(layout: InsertLayout): InsertLayout {
+	return { ...layout, insertOrder: [], insertHidden: [] };
+}
+
+/**
+ * Writes a new order, dropping ids the layout no longer has.
+ *
+ * The order arrives from a drag handler that captured it when its row was
+ * drawn, so it can name a custom row deleted since. Writing it back verbatim
+ * would leave a phantom id in insertOrder.
+ */
+export function applyOrder(layout: InsertLayout, order: readonly string[]): InsertLayout {
+	const live = new Set<string>([...BUILTIN_IDS, ...layout.insertCustom.map((entry) => entry.id)]);
+	return { ...layout, insertOrder: order.filter((id) => live.has(id)) };
+}

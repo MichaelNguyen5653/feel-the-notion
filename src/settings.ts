@@ -1,7 +1,19 @@
 import { App, PluginSettingTab, Setting, setIcon } from 'obsidian';
 import NotionBlock from './main';
 import { t } from './locale/helpers';
-import { BUILTIN_ITEMS, CustomInsertItem, reorderIds, resolveMenuItems } from './insertRegistry';
+import {
+    BUILTIN_ITEMS,
+    CustomInsertItem,
+    InsertLayout,
+    addCustomItem,
+    applyOrder,
+    removeCustomItem,
+    reorderIds,
+    resetItemLayout,
+    resolveMenuItems,
+    setItemHidden,
+    updateCustomItem,
+} from './insertRegistry';
 import { InsertCommandModal } from './insertCommandModal';
 
 export interface BlockPluginSettings {
@@ -56,7 +68,9 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // OFF by default: it changes the handle from a hover affordance into a
     // permanent one, which is a different editor to look at.
     handleAlwaysVisible: false,
-    foldHandle: true,
+    // OFF by default: it adds a third button to the hover handle, which is a
+    // visible change to every line you point at rather than an opt-in feature.
+    foldHandle: false,
     dateFormat: 'YYYY-MM-DD',
     timeFormat: 'HH:mm',
     // OFF by default: it changes editing behaviour, not just appearance.
@@ -83,6 +97,9 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
 
 export class BlockPluginSettingTab extends PluginSettingTab {
     plugin: NotionBlock;
+
+    /** The insert-menu list, repainted on its own so display() is never needed. */
+    private insertListEl: HTMLElement | null = null;
 
     constructor(app: App, plugin: NotionBlock) {
         super(app, plugin);
@@ -315,19 +332,63 @@ export class BlockPluginSettingTab extends PluginSettingTab {
      * what is shown identical.
      */
     private renderInsertItemList(containerEl: HTMLElement): void {
+        this.insertListEl = containerEl.createDiv({ cls: 'ftn-insert-item-list' });
+        this.refreshInsertList();
+
+        new Setting(containerEl)
+            .addButton((button) => button
+                .setButtonText(t('settings.addCommand'))
+                .onClick(() => {
+                    new InsertCommandModal(this.app, null, (item: CustomInsertItem) => {
+                        void this.applyLayout(addCustomItem(this.plugin.settings, item));
+                    }).open();
+                }))
+            .addButton((button) => button
+                .setButtonText(t('settings.resetOrder'))
+                .onClick(() => {
+                    void this.applyLayout(resetItemLayout(this.plugin.settings));
+                }));
+    }
+
+    /**
+     * Writes a layout back and repaints the list.
+     *
+     * Never calls display(). PluginSettingTab.display() begins by emptying the
+     * whole tab, so using it to reflect a one-row change threw away every other
+     * setting on the page and scrolled the user back to the top — on every add,
+     * edit, delete, reorder and reset. Only the list needs to change, so only
+     * the list is rebuilt.
+     */
+    private async applyLayout(next: InsertLayout): Promise<void> {
+        this.plugin.settings.insertOrder = next.insertOrder;
+        this.plugin.settings.insertHidden = next.insertHidden;
+        this.plugin.settings.insertCustom = next.insertCustom;
+        await this.plugin.saveSettings();
+        this.refreshInsertList();
+    }
+
+    /** Every Obsidian command by id, for naming a custom row's binding. */
+    private commandsById(): Record<string, { name?: string }> {
+        return (this.app as unknown as {
+            commands?: { commands?: Record<string, { name?: string }> };
+        }).commands?.commands ?? {};
+    }
+
+    private refreshInsertList(): void {
+        const listEl = this.insertListEl;
+        if (!listEl) return;
+
         const settings = this.plugin.settings;
-        const listEl = containerEl.createDiv({ cls: 'ftn-insert-item-list' });
+        // The list has its own max-height and scrolls independently, so a
+        // repaint has to put it back where the user left it.
+        const scrollTop = listEl.scrollTop;
+        listEl.empty();
 
         // Hidden items must appear in this list or they could never be turned
         // back on, so it is resolved with an empty hidden set.
         const items = resolveMenuItems(BUILTIN_ITEMS, settings.insertCustom, settings.insertOrder, [], (key) => t(key));
         const order = items.map((item) => item.id);
-
-        const persist = async (nextOrder: string[]) => {
-            settings.insertOrder = nextOrder;
-            await this.plugin.saveSettings();
-            this.display();
-        };
+        const commands = this.commandsById();
 
         items.forEach((item, index) => {
             const row = listEl.createDiv({ cls: 'ftn-insert-item-row', attr: { draggable: 'true' } });
@@ -335,18 +396,27 @@ export class BlockPluginSettingTab extends PluginSettingTab {
 
             setIcon(row.createSpan({ cls: 'ftn-insert-item-grip' }), 'grip-vertical');
             setIcon(row.createSpan({ cls: 'ftn-insert-item-icon' }), item.icon);
-            row.createSpan({ cls: 'ftn-insert-item-label', text: item.label });
 
             const custom = settings.insertCustom.find((entry) => entry.id === item.id);
+            const textEl = row.createDiv({ cls: 'ftn-insert-item-text' });
+            textEl.createDiv({ cls: 'ftn-insert-item-label', text: item.label });
+
             if (custom) {
-                // A binding whose command has gone (plugin disabled or removed)
-                // stays in the list and says so, rather than disappearing and
-                // taking the user's configuration with it.
-                const commands = (this.app as unknown as {
-                    commands?: { commands?: Record<string, unknown> };
-                }).commands?.commands;
-                if (commands && !(custom.commandId in commands)) {
-                    row.createSpan({ cls: 'ftn-insert-item-warning', text: t('settings.commandMissing') });
+                // Naming the bound command under the label is what makes a list
+                // of custom rows readable: the label is the user's own wording,
+                // so without this there is nothing on screen saying what the row
+                // actually runs.
+                const bound = commands[custom.commandId];
+                if (bound) {
+                    textEl.createDiv({
+                        cls: 'ftn-insert-item-source',
+                        text: t('settings.customCommand.boundTo').replace('{name}', bound.name ?? custom.commandId),
+                    });
+                } else {
+                    // A binding whose command has gone (plugin disabled or
+                    // removed) stays in the list and says so, rather than
+                    // disappearing and taking the user's configuration with it.
+                    textEl.createDiv({ cls: 'ftn-insert-item-source is-missing', text: t('settings.commandMissing') });
                 }
             }
 
@@ -354,33 +424,27 @@ export class BlockPluginSettingTab extends PluginSettingTab {
 
             const toggle = controls.createEl('input', { attr: { type: 'checkbox' } });
             toggle.checked = !settings.insertHidden.includes(item.id);
-            toggle.addEventListener('change', async () => {
-                settings.insertHidden = toggle.checked
-                    ? settings.insertHidden.filter((id) => id !== item.id)
-                    : [...settings.insertHidden, item.id];
-                await this.plugin.saveSettings();
+            // No repaint: the row's own shape does not change, and rebuilding
+            // the list under the pointer would fight the click that got here.
+            toggle.addEventListener('change', () => {
+                const next = setItemHidden(this.plugin.settings, item.id, !toggle.checked);
+                this.plugin.settings.insertHidden = next.insertHidden;
+                void this.plugin.saveSettings();
             });
 
             if (custom) {
                 const editBtn = controls.createDiv({ cls: 'ftn-insert-item-button', attr: { 'aria-label': t('settings.customCommand.edit') } });
                 setIcon(editBtn, 'pencil');
                 editBtn.addEventListener('click', () => {
-                    new InsertCommandModal(this.app, custom, async (updated) => {
-                        settings.insertCustom = settings.insertCustom.map((entry) =>
-                            entry.id === updated.id ? updated : entry);
-                        await this.plugin.saveSettings();
-                        this.display();
+                    new InsertCommandModal(this.app, custom, (updated) => {
+                        void this.applyLayout(updateCustomItem(this.plugin.settings, updated));
                     }).open();
                 });
 
                 const deleteBtn = controls.createDiv({ cls: 'ftn-insert-item-button is-danger', attr: { 'aria-label': t('settings.customCommand.delete') } });
                 setIcon(deleteBtn, 'trash-2');
-                deleteBtn.addEventListener('click', async () => {
-                    settings.insertCustom = settings.insertCustom.filter((entry) => entry.id !== custom.id);
-                    settings.insertOrder = order.filter((id) => id !== custom.id);
-                    settings.insertHidden = settings.insertHidden.filter((id) => id !== custom.id);
-                    await this.plugin.saveSettings();
-                    this.display();
+                deleteBtn.addEventListener('click', () => {
+                    void this.applyLayout(removeCustomItem(this.plugin.settings, custom.id));
                 });
             }
 
@@ -394,33 +458,20 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                 row.addClass('is-drop-target');
             });
             row.addEventListener('dragleave', () => row.removeClass('is-drop-target'));
-            row.addEventListener('drop', async (event) => {
+            row.addEventListener('drop', (event) => {
                 event.preventDefault();
                 row.removeClass('is-drop-target');
                 const from = Number(event.dataTransfer?.getData('text/plain'));
                 if (from === index) return;
-                await persist(reorderIds(order, from, index));
+                // applyOrder drops ids the layout no longer has: `order` was
+                // captured when this row was drawn, and the list no longer
+                // re-renders the whole tab, so a row deleted since would
+                // otherwise be written back as a phantom entry.
+                void this.applyLayout(applyOrder(this.plugin.settings, reorderIds(order, from, index)));
             });
         });
 
-        new Setting(containerEl)
-            .addButton((button) => button
-                .setButtonText(t('settings.addCommand'))
-                .onClick(() => {
-                    new InsertCommandModal(this.app, null, async (item: CustomInsertItem) => {
-                        settings.insertCustom = [...settings.insertCustom, item];
-                        await this.plugin.saveSettings();
-                        this.display();
-                    }).open();
-                }))
-            .addButton((button) => button
-                .setButtonText(t('settings.resetOrder'))
-                .onClick(async () => {
-                    settings.insertOrder = [];
-                    settings.insertHidden = [];
-                    await this.plugin.saveSettings();
-                    this.display();
-                }));
+        listEl.scrollTop = scrollTop;
     }
 }
 
