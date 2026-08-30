@@ -32,6 +32,77 @@ const PAIRED = ["***", "___", "**", "__", "==", "~~", "*", "_"];
 /** ``` fences, $$ math, and anything inside them, are left alone entirely. */
 const FENCE = /^\s*(```|~~~|\$\$)/;
 
+/** Ends a bare URL: whitespace, or a delimiter that is closing something else. */
+const URL_END = /[\s)\]>]/;
+
+/**
+ * Length of the link construct starting at `i`, or 0 when there is none.
+ *
+ * WHY LINKS ARE SKIPPED WHOLE
+ * The scanner walked straight through link syntax, so a paired `_` or `*`
+ * anywhere inside a URL or a note name was read as emphasis and hidden. A
+ * wikipedia link showed as ".../Foo bar baz" while being edited: the reader
+ * could not see their own URL. Markdown does not treat those underscores as
+ * emphasis either, so hiding them was wrong on the spec as much as on the eye.
+ *
+ * Both halves are skipped, not just the destination. Link text is where note
+ * names live, and `[my_page_name](...)` has the same problem as the URL does.
+ *
+ * Anything that does not close is not a link. A stray `[` is ordinary text,
+ * and treating it as an opener would silently switch marker hiding off for
+ * the rest of the line.
+ */
+function linkLength(text: string, i: number): number {
+	// Obsidian wikilinks and embeds: [[note]], [[note|alias]], ![[embed]].
+	const wiki = text.startsWith("![[", i) ? 3 : text.startsWith("[[", i) ? 2 : 0;
+	if (wiki > 0) {
+		const close = text.indexOf("]]", i + wiki);
+		return close === -1 ? 0 : close + 2 - i;
+	}
+
+	// Inline links and images: [text](dest), ![alt](dest).
+	const bracketAt = text.startsWith("![", i) ? i + 1 : text[i] === "[" ? i : -1;
+	if (bracketAt !== -1) {
+		// Counted rather than searched for the first "]", so an image nested in
+		// a link — [![alt](img)](href) — closes at the outer bracket.
+		let depth = 0;
+		let j = bracketAt;
+		for (; j < text.length; j++) {
+			if (text[j] === "\\") { j++; continue; }
+			if (text[j] === "[") depth++;
+			else if (text[j] === "]" && --depth === 0) break;
+		}
+		if (depth !== 0 || text[j + 1] !== "(") return 0;
+
+		let open = 0;
+		let k = j + 1;
+		for (; k < text.length; k++) {
+			if (text[k] === "\\") { k++; continue; }
+			if (text[k] === "(") open++;
+			else if (text[k] === ")" && --open === 0) break;
+		}
+		return open === 0 ? k + 1 - i : 0;
+	}
+
+	// Angle autolink: <https://example.com>. The scheme test keeps ordinary
+	// prose like "a < b > c" out of it.
+	if (text[i] === "<") {
+		const close = text.indexOf(">", i + 1);
+		if (close === -1) return 0;
+		return /^<[a-z][a-z0-9+.-]*:/i.test(text.slice(i, close + 1)) ? close + 1 - i : 0;
+	}
+
+	// Bare URL. Matched by prefix rather than by slicing the rest of the line,
+	// which would allocate a substring at every character of a long line.
+	if (text.startsWith("http://", i) || text.startsWith("https://", i)) {
+		let end = i;
+		while (end < text.length && !URL_END.test(text[end])) end++;
+		return end - i;
+	}
+
+	return 0;
+}
+
 /**
  * Returns the marker ranges on `lineText`, as absolute positions offset by
  * `lineFrom`. Ranges are sorted and never overlap.
@@ -84,6 +155,15 @@ export function findMarkerRanges(lineText: string, lineFrom = 0): MarkerRange[] 
 				ranges.push({ from: lineFrom + close, to: lineFrom + close + 1 });
 			}
 			i = close + 1; // skip past the span's contents entirely
+			continue;
+		}
+
+		// Links are skipped whole, for the same reason code spans are: their
+		// contents are not emphasis, and pairing markers inside them hides
+		// characters the reader needs to see.
+		const link = linkLength(lineText, i);
+		if (link > 0) {
+			i += link;
 			continue;
 		}
 

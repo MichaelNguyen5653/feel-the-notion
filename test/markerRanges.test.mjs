@@ -153,3 +153,82 @@ test("hiding never changes visible character count except by markers", () => {
 		}
 	}
 });
+
+// ── links ──────────────────────────────────────────────────────────────────
+//
+// Reported: the scanner walked straight through link syntax, so any paired _
+// or * inside a URL or a note name was treated as emphasis and hidden. A
+// wikipedia link came out reading ".../Foo bar baz" while being edited, which
+// is not a cosmetic problem — the reader cannot see their own URL. Markdown
+// does not treat those underscores as emphasis either, so hiding them was
+// wrong on the spec as well as on the eye.
+
+test("an inline link's destination is left alone", () => {
+	assert.equal(
+		hide("[link](https://en.wikipedia.org/wiki/Foo_bar_baz)"),
+		"[link](https://en.wikipedia.org/wiki/Foo_bar_baz)"
+	);
+});
+
+test("an inline link's text is left alone", () => {
+	assert.equal(hide("[my_page_name](https://example.com)"), "[my_page_name](https://example.com)");
+});
+
+test("doubled underscores in a URL survive too", () => {
+	assert.equal(hide("see [docs](https://x.com/a__b__c) here"), "see [docs](https://x.com/a__b__c) here");
+});
+
+test("an image is left alone", () => {
+	assert.equal(hide("![alt_text](path/to/a_b_c.png)"), "![alt_text](path/to/a_b_c.png)");
+});
+
+test("an image nested inside a link is left alone", () => {
+	assert.equal(
+		hide("[![img](a_b_c.png)](https://x.com/d_e_f)"),
+		"[![img](a_b_c.png)](https://x.com/d_e_f)"
+	);
+});
+
+test("a wikilink is left alone", () => {
+	assert.equal(hide("[[My_Note_Name]]"), "[[My_Note_Name]]");
+});
+
+test("a wikilink with an alias is left alone", () => {
+	assert.equal(hide("[[My_Note|the_alias]]"), "[[My_Note|the_alias]]");
+});
+
+test("an embed is left alone", () => {
+	assert.equal(hide("![[embed_file_here.png]]"), "![[embed_file_here.png]]");
+});
+
+test("a bare URL is left alone", () => {
+	assert.equal(hide("visit https://x.com/a_b_c today"), "visit https://x.com/a_b_c today");
+});
+
+test("an angle-bracket autolink is left alone", () => {
+	assert.equal(hide("<https://x.com/a_b_c>"), "<https://x.com/a_b_c>");
+});
+
+test("emphasis outside a link is still hidden", () => {
+	// The point is to skip links, not to give up on the rest of the line.
+	assert.equal(hide("**bold** [a_b](c_d) _it_"), "bold [a_b](c_d) it");
+});
+
+test("emphasis on both sides of a bare URL is still hidden", () => {
+	assert.equal(hide("_a_ https://x.com/p_q _b_"), "a https://x.com/p_q b");
+});
+
+test("an unclosed bracket does not swallow the rest of the line", () => {
+	// A stray "[" is ordinary text. If it ate everything after it, a single
+	// typed bracket would silently switch marker hiding off for that line.
+	assert.equal(hide("[oops _italic_ here"), "[oops italic here");
+});
+
+test("an unclosed link destination does not swallow the rest of the line", () => {
+	assert.equal(hide("[text](unclosed _italic_ here"), "[text](unclosed italic here");
+});
+
+test("bracketed text that is not a link keeps its emphasis hidden", () => {
+	// "[a] _b_" has no destination, so it is not a link at all.
+	assert.equal(hide("[a] _b_"), "[a] b");
+});
