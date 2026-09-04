@@ -26,6 +26,10 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.6.1
+
+Bug fixes and improvements.
+
 ### 0.6.0
 
 Bug fixes and improvements:
