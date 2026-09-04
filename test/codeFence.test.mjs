@@ -13,6 +13,7 @@ import {
 	codeFenceContent,
 	findCodeFence,
 	findFencedLines,
+	findFenceSpans,
 	isInsideCodeFence,
 } from "./.build/codeFence.js";
 
@@ -188,4 +189,65 @@ test("two separate blocks each contribute their own lines", () => {
 	const doc = docOf(["```", "a", "```", "prose", "```", "b", "```"]);
 	const fenced = findFencedLines(doc);
 	assert.deepEqual([...fenced], [2, 3, 6, 7]);
+});
+
+/**
+ * Whole-fence spans.
+ *
+ * findFencedLines answers "is this line code?", which is the right question
+ * for hiding syntax but the wrong one for moving or deleting a block: it
+ * excludes the opening fence, and it cannot say where the block a line belongs
+ * to starts and ends. Dragging and deleting need the span, both markers
+ * included, reachable from any line in it.
+ */
+
+test("every line of a fence maps to the same span, markers included", () => {
+	const doc = docOf(["intro", "```js", "code", "```", "after"]);
+	const spans = findFenceSpans(doc);
+
+	for (const line of [2, 3, 4]) {
+		assert.deepEqual(spans.get(line), { firstLine: 2, lastLine: 4 }, `line ${line}`);
+	}
+});
+
+test("lines outside a fence map to nothing", () => {
+	const spans = findFenceSpans(docOf(["intro", "```", "code", "```", "after"]));
+	assert.equal(spans.get(1), undefined);
+	assert.equal(spans.get(5), undefined);
+});
+
+test("two fences produce two distinct spans", () => {
+	const doc = docOf(["```", "a", "```", "prose", "```", "b", "```"]);
+	const spans = findFenceSpans(doc);
+	assert.deepEqual(spans.get(2), { firstLine: 1, lastLine: 3 });
+	assert.deepEqual(spans.get(6), { firstLine: 5, lastLine: 7 });
+	assert.equal(spans.get(4), undefined);
+});
+
+test("an unclosed fence runs to the end of the document", () => {
+	// Half-typed code is the normal state of a fence being written. Reporting
+	// no span would leave the drag and the delete acting on one line again,
+	// which is the behaviour being fixed.
+	const doc = docOf(["intro", "```", "code", "more"]);
+	assert.deepEqual(findFenceSpans(doc).get(3), { firstLine: 2, lastLine: 4 });
+});
+
+test("a fence closes only with its own marker", () => {
+	const doc = docOf(["```", "~~~", "still code", "```", "after"]);
+	assert.deepEqual(findFenceSpans(doc).get(2), { firstLine: 1, lastLine: 4 });
+	assert.equal(findFenceSpans(doc).get(5), undefined);
+});
+
+test("an indented fence is still a fence", () => {
+	// The whole point of the insert fix is that fences can carry indentation.
+	const doc = docOf(["- item", "  ```", "  code", "  ```"]);
+	assert.deepEqual(findFenceSpans(doc).get(3), { firstLine: 2, lastLine: 4 });
+});
+
+test("an empty fence is a two-line span", () => {
+	assert.deepEqual(findFenceSpans(docOf(["```", "```"])).get(1), { firstLine: 1, lastLine: 2 });
+});
+
+test("a document with no fences yields an empty map", () => {
+	assert.equal(findFenceSpans(docOf(["one", "two"])).size, 0);
 });

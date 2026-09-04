@@ -132,3 +132,66 @@ export function codeFenceContent(doc: Text, lineNo: number): { from: number; to:
 
 	return { from: doc.line(first).from, to: doc.line(last).to };
 }
+
+/** A fenced block's line span, both fence markers included. */
+export interface FenceSpan {
+	/** 1-based line of the opening fence. */
+	firstLine: number;
+	/** 1-based line of the closing fence, or the last line when unclosed. */
+	lastLine: number;
+}
+
+/**
+ * Every fenced block in the document, reachable from any line it contains.
+ *
+ * findFencedLines answers "is this line code?", which is what hiding syntax
+ * needs. Moving and deleting need a different answer: where does the block
+ * this line belongs to begin and end, counting both markers. Dragging a fence
+ * used to carry off the ``` alone, leaving the code behind for the fence to
+ * stretch over; deleting one removed the marker and left the code.
+ *
+ * The opening fence is a member of its own span here, unlike in
+ * findFencedLines. Both functions are right for their own callers: an opening
+ * fence is ordinary markdown to type on, and part of the block to move.
+ *
+ * One pass, and every line of a span shares one object, so a caller looping
+ * over lines stays linear instead of rescanning the document per line.
+ */
+export function findFenceSpans(doc: Text): Map<number, FenceSpan> {
+	const spans = new Map<number, FenceSpan>();
+	let openChar: string | null = null;
+	let open: number[] = [];
+	let n = 0;
+
+	const close = (lastLine: number): void => {
+		const span: FenceSpan = { firstLine: open[0], lastLine };
+		for (const line of open) spans.set(line, span);
+		openChar = null;
+		open = [];
+	};
+
+	for (const text of doc.iterLines()) {
+		n++;
+		const match = FENCE.exec(text);
+
+		if (openChar === null) {
+			if (match) {
+				openChar = match[1];
+				open = [n];
+			}
+			continue;
+		}
+
+		open.push(n);
+		// A fence closes only with the character it opened with, so a ``` block
+		// containing ~~~ stays one block. See findCodeFence above.
+		if (match && match[1] === openChar) close(n);
+	}
+
+	// An unclosed fence runs to the end. Half-typed code is the normal state of
+	// a fence being written, and reporting no span there would put the drag and
+	// the delete back on a single line.
+	if (openChar !== null) close(n);
+
+	return spans;
+}

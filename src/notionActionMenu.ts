@@ -5,6 +5,7 @@ import NotionBlock from "./main";
 import { transformLine } from "./blockTransform";
 import { placeMenu, placeSubmenu } from "./menuPosition";
 import { planColorWrap } from "./colorWrap";
+import { findFenceSpans } from "./codeFence";
 import { t } from "./locale/helpers";
 
 export interface ActionMenuOptions {
@@ -431,9 +432,20 @@ class NotionBlockActionMenu {
     }
 
     private deleteLine(): void {
-        const line = this.view.state.doc.line(this.lineNo);
-        const from = line.number === 1 ? line.from : line.from - 1;
-        const to = line.number === 1 && this.view.state.doc.lines > 1 ? line.to + 1 : line.to;
+        const doc = this.view.state.doc;
+
+        // A fenced code block is one block. Deleting the line the menu was
+        // opened on removed the ``` and left the code behind as prose, with
+        // the other marker still in the note — the block's format deleted and
+        // its content kept, which is the opposite of what Delete means.
+        const span = findFenceSpans(doc).get(this.lineNo);
+        const first = doc.line(span?.firstLine ?? this.lineNo);
+        const last = doc.line(span?.lastLine ?? this.lineNo);
+
+        // Take the newline with it, from whichever side has one, so deleting
+        // does not leave a blank line where the block was.
+        const from = first.number === 1 ? first.from : first.from - 1;
+        const to = first.number === 1 && doc.lines > last.number ? last.to + 1 : last.to;
         dispatchBlockEdit(this.view, {
             changes: { from, to, insert: "" },
             scrollIntoView: true,

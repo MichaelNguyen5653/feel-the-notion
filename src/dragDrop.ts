@@ -12,6 +12,7 @@ import {
 import { FrameScheduler } from "./frameScheduler";
 import { planBlockMove, MoveSource } from "./planMove";
 import { foldHidingLineEnd } from "./blockFold";
+import { FenceSpan, findFenceSpans } from "./codeFence";
 import { t } from "./locale/helpers";
 
 /**
@@ -39,6 +40,14 @@ export class DragManager {
     private currentAllowedIndents: number[] = [0];
     /** Line the cached indents were computed for; null means they are stale. */
     private indentsForLine: number | null = null;
+    /**
+     * Fence spans as of drag start, for keeping a drop out of the middle of
+     * someone's code. Read once: the document cannot change mid-drag, and this
+     * is consulted on every pointer frame.
+     */
+    private fenceSpans: Map<number, FenceSpan> = new Map();
+    /** A code block never re-indents on drop, so it is offered no choice. */
+    private draggingFence = false;
     private indentUnit = 4;
     private metrics: DragMetrics | null = null;
     private ownerDocument: Document;
@@ -91,6 +100,8 @@ export class DragManager {
             lastLine: range.lastLine,
         };
         this.indentUnit = detectIndentUnit(doc);
+        this.draggingFence = range.isFence;
+        this.fenceSpans = findFenceSpans(doc);
 
         // Create ghost element
         this.ghostEl = this.ownerDocument.body.createDiv({
@@ -173,6 +184,8 @@ export class DragManager {
         this.currentTargetLine = null;
         this.indentsForLine = null;
         this.metrics = null;
+        this.draggingFence = false;
+        this.fenceSpans = new Map();
 
         if (this.ghostEl) {
             this.ghostEl.remove();
@@ -253,6 +266,15 @@ export class DragManager {
                     const hiddenUntil = foldHidingLineEnd(this.view, targetLine);
                     if (hiddenUntil !== null) targetLine = hiddenUntil + 1;
 
+                    // A drop past the opening fence would splice the dragged
+                    // block between two lines of someone's code, where it
+                    // stops being a block and becomes text in their snippet.
+                    // Stepping past the closer puts it below the whole thing.
+                    // Landing ON the opening fence is a drop above the block
+                    // and stays where it is.
+                    const fence = this.fenceSpans.get(targetLine);
+                    if (fence && targetLine > fence.firstLine) targetLine = fence.lastLine + 1;
+
                     this.currentTargetLine = targetLine;
 
                     // Horizontal drag position chooses the drop depth, snapped to
@@ -272,7 +294,15 @@ export class DragManager {
                         this.indentsForLine = targetLine;
                     }
 
-                    const desired = Math.max(0, Math.round((mouseX - m.contentLeft) / m.columnPx));
+                    // A code block keeps the indent it already had, whatever
+                    // the pointer is doing horizontally. Notion does not nest
+                    // code blocks either, and a fence indented four columns
+                    // outside a list stops being read as a fence at all.
+                    // Snapped anyway, so a nested one dragged to the top of
+                    // the note cannot land at a depth nothing supports.
+                    const desired = this.draggingFence
+                        ? this.startBlock?.indent ?? 0
+                        : Math.max(0, Math.round((mouseX - m.contentLeft) / m.columnPx));
                     this.currentTargetIndent = pickIndent(this.currentAllowedIndents, desired);
 
                     const offsetPx = this.currentTargetIndent * m.columnPx;
@@ -280,7 +310,7 @@ export class DragManager {
                         top,
                         left: coords.left + offsetPx,
                         width: Math.max(40, m.contentWidth - offsetPx),
-                        hasChoice: this.currentAllowedIndents.length > 1,
+                        hasChoice: !this.draggingFence && this.currentAllowedIndents.length > 1,
                     };
                 }
             } catch {

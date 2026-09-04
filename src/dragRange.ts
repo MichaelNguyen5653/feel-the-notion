@@ -1,4 +1,5 @@
 import { EditorSelection, Text } from "@codemirror/state";
+import { findFenceSpans } from "./codeFence";
 
 /**
  * Works out what a drag should actually pick up, and at what indent it should
@@ -31,6 +32,14 @@ export interface DragRange {
 	lastLine: number;
 	/** Indent width of the block's first line, for re-indenting on drop. */
 	indent: number;
+	/**
+	 * Whether the range is exactly one fenced code block.
+	 *
+	 * The drop offers no indent choice for one. A fence indented four columns
+	 * outside a list stops being a fence at all, and Notion does not let a code
+	 * block nest either.
+	 */
+	isFence: boolean;
 }
 
 /** A tab counts as 4 columns, matching Obsidian's default list indent. */
@@ -140,13 +149,14 @@ function trimBlankEdges(doc: Text, first: number, last: number): [number, number
 	return [first, last];
 }
 
-function toRange(doc: Text, first: number, last: number): DragRange {
+function toRange(doc: Text, first: number, last: number, isFence: boolean): DragRange {
 	return {
 		from: doc.line(first).from,
 		to: doc.line(last).to,
 		firstLine: first,
 		lastLine: last,
 		indent: indentWidth(doc.line(first).text),
+		isFence,
 	};
 }
 
@@ -156,6 +166,8 @@ export function resolveDragRange(
 	granularity: DragGranularity,
 	selection?: EditorSelection
 ): DragRange {
+	const spans = findFenceSpans(doc);
+
 	// 1. Multi-block selection containing the handle wins over everything.
 	if (selection) {
 		for (const range of selection.ranges) {
@@ -167,21 +179,40 @@ export function resolveDragRange(
 				// Blank lines at the edges are selection slop, not content the
 				// user meant to move.
 				const [f, l] = trimBlankEdges(doc, first, last);
-				return toRange(doc, f, l);
+				// An end landing inside a fence widens to the fence's own edge.
+				// Half a code block is not something anyone can mean to carry
+				// away, and dropping it would leave one marker behind to
+				// swallow whatever followed it.
+				const wideFirst = spans.get(f)?.firstLine ?? f;
+				const wideLast = spans.get(l)?.lastLine ?? l;
+				const span = spans.get(wideFirst);
+				const whollyOneFence =
+					span !== undefined && span.firstLine === wideFirst && span.lastLine === wideLast;
+				return toRange(doc, wideFirst, wideLast, whollyOneFence);
 			}
 		}
 	}
 
-	// 2. Whole block, including everything nested under it.
+	// 2. A fenced code block is one block, from any line in it.
+	//
+	//    This is checked before granularity because line mode is a choice about
+	//    prose: dragging a single line out of a fence breaks the block every
+	//    time, so it is never what the setting meant. Both markers travel with
+	//    the code, which is what stops the fence stretching over the lines it
+	//    used to sit above.
+	const span = spans.get(lineNo);
+	if (span) return toRange(doc, span.firstLine, span.lastLine, true);
+
+	// 3. Whole block, including everything nested under it.
 	//    A blank line is a boundary, not a block, so it only ever moves alone.
 	if (granularity === "paragraph" && !isBlank(doc.line(lineNo).text)) {
 		const start = findBlockStart(doc, lineNo);
 		const end = findBlockEnd(doc, start);
-		return toRange(doc, start, end);
+		return toRange(doc, start, end, false);
 	}
 
-	// 3. Just the one line.
-	return toRange(doc, lineNo, lineNo);
+	// 4. Just the one line.
+	return toRange(doc, lineNo, lineNo, false);
 }
 
 /** A list item or task, as opposed to prose or a heading. */
@@ -291,6 +322,10 @@ const GHOST_TEXT_LIMIT = 50;
  * boundaries and are not counted.
  */
 export function countBlocks(doc: Text, firstLine: number, lastLine: number): number {
+	// One scan up front rather than a fence lookup per line: the loop below is
+	// already a walk over the range, and a rescan inside it would make this
+	// quadratic on a whole-note selection.
+	const spans = findFenceSpans(doc);
 	let count = 0;
 	let n = firstLine;
 
@@ -299,7 +334,11 @@ export function countBlocks(doc: Text, firstLine: number, lastLine: number): num
 			n++;
 			continue;
 		}
-		const end = findBlockEnd(doc, findBlockStart(doc, n));
+		// A fence is one block however many lines of code it holds. Counting
+		// its lines made a four-line snippet read as "4 blocks" on the ghost,
+		// which describes nothing the user picked up.
+		const span = spans.get(n);
+		const end = span ? span.lastLine : findBlockEnd(doc, findBlockStart(doc, n));
 		count++;
 		// max() guards against a walk that returns a line before the cursor,
 		// which would otherwise spin here forever.

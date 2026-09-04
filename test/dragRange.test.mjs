@@ -362,3 +362,97 @@ test("counting a single block that owns children returns one", () => {
 	const d = listDoc(["- item", "    - child", "    - child"]);
 	assert.equal(countBlocks(d, 1, 3), 1);
 });
+
+/**
+ * A fenced code block is one block.
+ *
+ * findBlockEnd extends a block only over lines indented deeper than its first,
+ * and code sits at the same indent as its fence, so the walk stopped dead.
+ * Every line of a code block resolved to itself: grabbing the ``` carried off
+ * the marker alone, the code stayed where it was, and the fence stretched over
+ * whatever now sat between it and the old closer.
+ */
+
+const fenceDoc = () =>
+	listDoc([
+		"intro", // 1
+		"```js", // 2
+		"const x = 1;", // 3
+		"// comment", // 4
+		"```", // 5
+		"after", // 6
+	]);
+
+test("grabbing the opening fence takes the whole block", () => {
+	const r = resolveDragRange(fenceDoc(), 2, "paragraph");
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 5);
+});
+
+test("grabbing a line of code takes the whole block, not the line", () => {
+	const r = resolveDragRange(fenceDoc(), 3, "paragraph");
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 5);
+});
+
+test("grabbing the closing fence takes the whole block", () => {
+	const r = resolveDragRange(fenceDoc(), 5, "paragraph");
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 5);
+});
+
+test("line granularity does not split a code block", () => {
+	// Line mode is a choice about prose. Dragging one line out of a fence
+	// breaks the block every time, so it is never what the setting meant.
+	const r = resolveDragRange(fenceDoc(), 3, "line");
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 5);
+});
+
+test("a code block reports itself as one", () => {
+	assert.equal(resolveDragRange(fenceDoc(), 3, "paragraph").isFence, true);
+});
+
+test("prose does not report itself as a code block", () => {
+	assert.equal(resolveDragRange(fenceDoc(), 1, "paragraph").isFence, false);
+});
+
+test("an unclosed fence still drags as one block", () => {
+	const d = listDoc(["intro", "```", "code", "more"]);
+	const r = resolveDragRange(d, 3, "paragraph");
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 4);
+});
+
+test("an indented code block reports its own indent", () => {
+	const d = listDoc(["- item", "  ```", "  code", "  ```"]);
+	const r = resolveDragRange(d, 3, "paragraph");
+	assert.deepEqual([r.firstLine, r.lastLine, r.indent], [2, 4, 2]);
+});
+
+test("a selection ending inside a fence widens to the whole fence", () => {
+	// Half a code block is not a thing anyone can mean to carry away.
+	const d = fenceDoc();
+	const selection = EditorSelection.single(d.line(1).from, d.line(3).to);
+	const r = resolveDragRange(d, 1, "paragraph", selection);
+	assert.equal(r.firstLine, 1);
+	assert.equal(r.lastLine, 5);
+});
+
+test("a selection starting inside a fence widens to the whole fence", () => {
+	const d = fenceDoc();
+	const selection = EditorSelection.single(d.line(4).from, d.line(6).to);
+	const r = resolveDragRange(d, 6, "paragraph", selection);
+	assert.equal(r.firstLine, 2);
+	assert.equal(r.lastLine, 6);
+});
+
+test("a code block counts as one block in the drag ghost", () => {
+	// Four lines used to read as "4 blocks", which describes nothing the user
+	// picked up.
+	assert.equal(countBlocks(fenceDoc(), 2, 5), 1);
+});
+
+test("counting a code block alongside prose counts each once", () => {
+	assert.equal(countBlocks(fenceDoc(), 1, 6), 3);
+});

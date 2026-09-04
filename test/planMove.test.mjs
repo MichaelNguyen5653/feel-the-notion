@@ -196,3 +196,73 @@ test("no move ever duplicates or drops content", () => {
 		}
 	}
 });
+
+/**
+ * Code blocks move whole.
+ *
+ * The reported symptom: grab the handle and the content moves first, then the
+ * code block extends rather than moves. That is one line travelling on its
+ * own — the opening fence left its code behind, and the surviving markers
+ * stretched over whatever text now sat between them.
+ */
+
+const FENCED = [
+	"intro", // 1
+	"```js", // 2
+	"const x = 1;", // 3
+	"```", // 4
+	"after", // 5
+];
+
+test("dragging a code block by its opening fence carries the code", () => {
+	assert.deepEqual(drag(FENCED, 2, 6), [
+		"intro",
+		"after",
+		"```js",
+		"const x = 1;",
+		"```",
+	]);
+});
+
+test("dragging a code block by a line of its code moves the whole block", () => {
+	assert.deepEqual(drag(FENCED, 3, 1), [
+		"```js",
+		"const x = 1;",
+		"```",
+		"intro",
+		"after",
+	]);
+});
+
+test("dragging a code block by its closing fence moves the whole block", () => {
+	assert.deepEqual(drag(FENCED, 4, 1), [
+		"```js",
+		"const x = 1;",
+		"```",
+		"intro",
+		"after",
+	]);
+});
+
+test("an unclosed code block moves whole", () => {
+	// Half-typed code is the normal state of a fence being written.
+	assert.deepEqual(drag(["intro", "```", "code"], 2, 1), ["```", "code", "intro"]);
+});
+
+test("prose sitting under a code block still moves on its own", () => {
+	// The fence rule must not leak onto the line after the closing marker.
+	assert.deepEqual(drag(FENCED, 5, 1), [
+		"after",
+		"intro",
+		"```js",
+		"const x = 1;",
+		"```",
+	]);
+});
+
+test("an indented code block keeps its own indent when moved", () => {
+	assert.deepEqual(
+		drag(["- item", "  ```", "  code", "  ```", "- other"], 2, 6),
+		["- item", "- other", "  ```", "  code", "  ```"]
+	);
+});

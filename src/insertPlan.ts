@@ -41,6 +41,51 @@ export interface InsertPlan {
 	anchor: number;
 }
 
+/**
+ * Re-emits a multi-line insert so every line after the first carries `indent`.
+ *
+ * An insert arrives as one string with literal newlines in it, and only its
+ * first line lands on the line the caret is already on. Everything after it
+ * starts at column zero, so tabbing to indent and then typing /code opened a
+ * fence at the caret's indent and closed it at the margin, which is not a code
+ * block at all. Tables, math and callouts break the same way.
+ *
+ * The caret offset moves with the text. Left alone it would still count from
+ * the unindented string and land on the fence line rather than inside it.
+ *
+ * A trailing empty line is left bare. "---\n" means "a divider, then a fresh
+ * line"; indenting past that last break would leave trailing spaces on a line
+ * the user has not typed in yet.
+ *
+ * The indent is copied verbatim rather than rebuilt from a width, so a vault
+ * that indents with tabs keeps its tabs.
+ */
+export function indentInsert(
+	insertText: string,
+	indent: string,
+	cursorOffset: number
+): { text: string; cursorOffset: number } {
+	if (indent === "" || !insertText.includes("\n")) return { text: insertText, cursorOffset };
+
+	const lines = insertText.split("\n");
+	let text = lines[0];
+	let offset = cursorOffset;
+	// How much of the ORIGINAL string has been walked past, so the caret is
+	// compared against offsets in the text it was measured against.
+	let consumed = lines[0].length;
+
+	for (let i = 1; i < lines.length; i++) {
+		const trailingBlank = i === lines.length - 1 && lines[i] === "";
+		const prefix = trailingBlank ? "" : indent;
+		consumed += 1; // the newline itself
+		if (cursorOffset >= consumed) offset += prefix.length;
+		text += "\n" + prefix + lines[i];
+		consumed += lines[i].length;
+	}
+
+	return { text, cursorOffset: offset };
+}
+
 export function planInsert(input: InsertPlanInput): InsertPlan {
 	const { lineFrom, lineTo, lineText, insertText, remove, extra = [], needsBlankLine, previousLineHasContent } = input;
 	const cursorOffset = input.cursorOffset ?? insertText.length;
