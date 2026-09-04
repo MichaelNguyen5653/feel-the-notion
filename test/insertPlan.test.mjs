@@ -10,7 +10,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { indentInsert, insertFollowsLineIndent, planInsert } from "./.build/insertPlan.js";
+import { planInsert } from "./.build/insertPlan.js";
 import { applyChanges } from "./.build/planMove.js";
 
 /** Applies a plan to a single-line document and reports text plus caret. */
@@ -237,88 +237,4 @@ test("needsBlankLine unset leaves block inserts byte-identical to before this fe
 	const out = run("alpha", { insertText: "# ", asBlock: true });
 	assert.equal(out.text, "alpha\n# ");
 	assert.equal(out.anchor, 8);
-});
-
-/**
- * Multi-line inserts adopt the line's indent.
- *
- * Only the first line of an insert ever inherited the indentation already on
- * the line, because the rest arrive as literal "\n" in one string. Tabbing to
- * indent and then typing /code produced an opener at the caret's indent and a
- * closer at column zero, which is not a code block.
- */
-
-test("a single-line insert is untouched", () => {
-	assert.deepEqual(indentInsert("# ", "  ", 2), { text: "# ", cursorOffset: 2 });
-});
-
-test("no indent on the line leaves a multi-line insert alone", () => {
-	assert.deepEqual(indentInsert("```\n\n```", "", 4), { text: "```\n\n```", cursorOffset: 4 });
-});
-
-test("a code fence closes at the same indent it opened at", () => {
-	assert.equal(indentInsert("```\n\n```", "  ", 4).text, "```\n  \n  ```");
-});
-
-test("the caret still lands inside the fence once the indent is added", () => {
-	// Offset 4 was "just past the opening ```\n". Two columns now sit between
-	// there and the caret, and an offset that does not move leaves the caret
-	// on the fence line itself.
-	const { text, cursorOffset } = indentInsert("```\n\n```", "  ", 4);
-	assert.equal(text.slice(0, cursorOffset), "```\n  ");
-});
-
-test("a tab indent is carried over verbatim", () => {
-	// Reindenting to spaces would fight whatever the vault is set to.
-	assert.equal(indentInsert("```\n\n```", "\t", 4).text, "```\n\t\n\t```");
-});
-
-test("every line of a table adopts the indent", () => {
-	const table = "|  |  |\n| --- | --- |\n|  |  |";
-	assert.equal(
-		indentInsert(table, "  ", 2).text,
-		"|  |  |\n  | --- | --- |\n  |  |  |"
-	);
-});
-
-test("a trailing newline does not grow a whitespace-only line", () => {
-	// "---\n" means "a divider, then a fresh line". Indenting past the last
-	// break would leave trailing spaces on a line the user has not typed in.
-	assert.deepEqual(indentInsert("---\n", "  ", 4), { text: "---\n", cursorOffset: 4 });
-});
-
-test("a caret on the first line is not shifted", () => {
-	assert.equal(indentInsert("$$\n\n$$", "  ", 1).cursorOffset, 1);
-});
-
-test("a callout carries its indent onto the continuation line", () => {
-	assert.equal(indentInsert("> [!note]\n> ", "  ", 12).text, "> [!note]\n  > ");
-});
-
-/**
- * Which inserts may adopt the line's indent.
- *
- * Obsidian will not render an indented table or callout: both come out as
- * literal pipes and literal "> [!question]" text. A fence survives indentation
- * and renders as a code block, so it is the only construct that gets it.
- */
-
-test("a code fence follows the line's indent", () => {
-	assert.equal(insertFollowsLineIndent("code"), true);
-});
-
-test("a table does not, because an indented one renders as literal pipes", () => {
-	assert.equal(insertFollowsLineIndent("table"), false);
-});
-
-test("a callout does not, because an indented one renders as literal text", () => {
-	assert.equal(insertFollowsLineIndent("callout-question"), false);
-});
-
-test("math does not, having the same risk and no report behind it", () => {
-	assert.equal(insertFollowsLineIndent("math"), false);
-});
-
-test("a single-line insert is not affected either way", () => {
-	assert.equal(insertFollowsLineIndent("h1"), false);
 });

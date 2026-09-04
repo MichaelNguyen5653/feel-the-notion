@@ -3,8 +3,7 @@ import { EditorView } from "@codemirror/view";
 import { moment, Notice } from "obsidian";
 import NotionBlock from "./main";
 import { t } from "./locale/helpers";
-import { InsertChange, indentInsert, insertFollowsLineIndent, planInsert } from "./insertPlan";
-import { indentString } from "./dragRange";
+import { InsertChange, planInsert } from "./insertPlan";
 import { toMarkdownLink } from "./attachmentLink";
 import { collectHeadings, prefixLines, quotePrefix, tableOfContents } from "./tableOfContents";
 
@@ -408,28 +407,12 @@ export function insertBlock(
     const needsBlankLine = targetType === "table";
     const previousLineHasContent = needsBlankLine && lineNo > 1 && view.state.doc.line(lineNo - 1).text.trim().length > 0;
 
-    // Only the first line of a multi-line insert inherits the indentation
-    // already on the line; everything after a newline starts at column zero.
-    // Tabbing to indent and then typing /code opened a fence at the caret's
-    // indent and closed it at the margin, which is not a code block.
-    //
-    // Fences only. Indenting a table or a callout the same way stopped
-    // Obsidian rendering either of them, which traded one broken block for
-    // another. Frontmatter and footnotes are excluded as well, since neither
-    // lands on this line at all.
-    let caretOffset = cursorOffset || insertText.length;
-    if (!isMetadata && customPos === null && insertFollowsLineIndent(targetType)) {
-        const indented = indentInsert(insertText, indentString(line.text), caretOffset);
-        insertText = indented.text;
-        caretOffset = indented.cursorOffset;
-    }
-
     const plan = planInsert({
         lineFrom: line.from,
         lineTo: line.to,
         lineText: line.text,
         insertText,
-        cursorOffset: caretOffset,
+        cursorOffset: cursorOffset || insertText.length,
         asBlock: isNewLine,
         at: customPos ?? undefined,
         remove,
