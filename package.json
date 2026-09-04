@@ -1,6 +1,6 @@
 {
 	"name": "feel-the-notion",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"description": "Notion-like block editing for Live Preview. Forked from BCS1037/notion-block v1.4.0.",
 	"main": "main.js",
 	"scripts": {

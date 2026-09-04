@@ -1,7 +1,7 @@
 {
 	"id": "feel-the-notion",
 	"name": "Feel the Notion",
-	"version": "0.6.0",
+	"version": "0.6.1",
 	"minAppVersion": "1.5.7",
 	"description": "Notion-like block editing in Live Preview: drag whole blocks, select whole blocks, block-aware Cmd+A and Backspace, and a slash insert menu.",
 	"author": "MichaelNguyen5653",
