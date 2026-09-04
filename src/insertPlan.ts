@@ -42,6 +42,22 @@ export interface InsertPlan {
 }
 
 /**
+ * Whether an insert of this type may adopt the indentation of the line it
+ * lands on.
+ *
+ * Only a fence. Obsidian renders an indented table as literal pipes and an
+ * indented callout as literal "> [!note]" text, so carrying the indent onto
+ * those turns a working block into visible markup. A fence indented up to
+ * three columns is still a fence and still renders as code.
+ *
+ * Math is left out too. It has the same risk as a table, and no report behind
+ * it worth taking that risk for.
+ */
+export function insertFollowsLineIndent(targetType: string): boolean {
+	return targetType === "code";
+}
+
+/**
  * Re-emits a multi-line insert so every line after the first carries `indent`.
  *
  * An insert arrives as one string with literal newlines in it, and only its

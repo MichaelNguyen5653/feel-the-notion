@@ -10,7 +10,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { indentInsert, planInsert } from "./.build/insertPlan.js";
+import { indentInsert, insertFollowsLineIndent, planInsert } from "./.build/insertPlan.js";
 import { applyChanges } from "./.build/planMove.js";
 
 /** Applies a plan to a single-line document and reports text plus caret. */
@@ -293,4 +293,32 @@ test("a caret on the first line is not shifted", () => {
 
 test("a callout carries its indent onto the continuation line", () => {
 	assert.equal(indentInsert("> [!note]\n> ", "  ", 12).text, "> [!note]\n  > ");
+});
+
+/**
+ * Which inserts may adopt the line's indent.
+ *
+ * Obsidian will not render an indented table or callout: both come out as
+ * literal pipes and literal "> [!question]" text. A fence survives indentation
+ * and renders as a code block, so it is the only construct that gets it.
+ */
+
+test("a code fence follows the line's indent", () => {
+	assert.equal(insertFollowsLineIndent("code"), true);
+});
+
+test("a table does not, because an indented one renders as literal pipes", () => {
+	assert.equal(insertFollowsLineIndent("table"), false);
+});
+
+test("a callout does not, because an indented one renders as literal text", () => {
+	assert.equal(insertFollowsLineIndent("callout-question"), false);
+});
+
+test("math does not, having the same risk and no report behind it", () => {
+	assert.equal(insertFollowsLineIndent("math"), false);
+});
+
+test("a single-line insert is not affected either way", () => {
+	assert.equal(insertFollowsLineIndent("h1"), false);
 });
