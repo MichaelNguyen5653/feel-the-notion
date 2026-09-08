@@ -69,6 +69,11 @@ export const BUILTIN_ITEMS: readonly RegistryItem[] = [
 	{ id: "h4", sectionKey: "headings", labelKey: "menu.h4", icon: "heading-4", keywords: ["h4", "#4", "title"] },
 	{ id: "h5", sectionKey: "headings", labelKey: "menu.h5", icon: "heading-5", keywords: ["h5", "#5", "title"] },
 
+	// First under the headings, and deliberately so: it is the way out of a
+	// table or code block that has taken the end of the note, so it has to be
+	// reachable without scrolling or typing a query.
+	{ id: "blank", sectionKey: "insert", labelKey: "menu.blankLine", icon: "corner-down-left", keywords: ["blank", "empty", "line", "new line", "space", "spacer", "break", "enter"] },
+
 	// "check list" with the space is in the keywords deliberately: the matcher
 	// tests the query as one substring, so a two-word query matches nothing
 	// unless a keyword contains the space too.

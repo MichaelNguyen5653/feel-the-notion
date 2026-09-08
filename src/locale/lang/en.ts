@@ -50,6 +50,7 @@ const en = {
     "menu.bullet": "Bulleted list",
     "menu.numbered": "Numbered list",
     "menu.blockquote": "Quote",
+    "menu.blankLine": "Insert a new line",
     "menu.code": "Code block",
     "menu.math": "Math block",
     "menu.divider": "Divider",

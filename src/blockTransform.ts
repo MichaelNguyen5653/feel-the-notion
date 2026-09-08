@@ -346,6 +346,10 @@ export function insertBlock(
             case "numbered": insertText = "1. "; break;
             case "blockquote": insertText = "> "; break;
             case "paragraph": insertText = ""; break;
+            // Nothing but the newline planInsert opens for a block insert.
+            // The line the newline goes AFTER is chosen by the caller, so a
+            // table or fence is not cut in half. See blankLineAfter.
+            case "blank": insertText = ""; break;
             case "code": insertText = "```\n\n```"; cursorOffset = 4; break;
             case "math": insertText = "$$\n\n$$"; cursorOffset = 3; break;
             case "divider": insertText = "---\n"; break;

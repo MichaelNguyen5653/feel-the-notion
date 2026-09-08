@@ -360,3 +360,12 @@ test("a command with no name is skipped rather than throwing", () => {
 test("nothing matching gives an empty list", () => {
 	assert.deepEqual(matchCommands(CMDS, "zzzz"), []);
 });
+
+test("the new-line row is the first thing under the headings", () => {
+	// It is an escape hatch from a block that has taken the end of the note,
+	// so it has to be reachable without scrolling or typing.
+	const row = BUILTIN_ITEMS.findIndex((item) => item.id === "blank");
+	const firstInsert = BUILTIN_ITEMS.findIndex((item) => item.sectionKey === "insert");
+	assert.notEqual(row, -1, "the row exists");
+	assert.equal(row, firstInsert);
+});

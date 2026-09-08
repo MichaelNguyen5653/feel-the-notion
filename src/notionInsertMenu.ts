@@ -10,6 +10,7 @@ import {
     insertTableOfContents,
 } from "./blockTransform";
 import { matchesQuery } from "./slashTrigger";
+import { blankLineAfter } from "./blankLine";
 import { placeMenu, placeSubmenu } from "./menuPosition";
 import { t } from "./locale/helpers";
 import {
@@ -284,6 +285,7 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
     }
 
     private builtinAction(id: string): InsertAction {
+        if (id === "blank") return () => this.insertBlankLine();
         if (id === "toc") return () => this.insertTableOfContents();
         if (id === "page") return () => this.createPage();
         if (id === "image") return () => this.openImagePicker();
@@ -503,6 +505,25 @@ class NotionBlockInsertMenu implements InsertMenuHandle {
 
     private insert(type: string): void {
         insertBlock(this.plugin, this.view, this.lineNo, type, this.removeRange());
+    }
+
+    /**
+     * "Insert a new line", which lands after the whole block rather than after
+     * the line it was invoked on.
+     *
+     * The `+` handle sits on whichever line the pointer is over, so on a table
+     * that is usually a middle row, and inserting there would cut the table in
+     * half — the exact failure this row exists to fix.
+     *
+     * Typing the query is the exception. The caret is already on the line the
+     * user means, and the `/query` still has to be deleted from it: resolving
+     * to a block end would put the insert on one line and the deletion on
+     * another, and planInsert reads both off the same line.
+     */
+    private insertBlankLine(): void {
+        const remove = this.removeRange();
+        const lineNo = remove ? this.lineNo : blankLineAfter(this.view.state.doc, this.lineNo);
+        insertBlock(this.plugin, this.view, lineNo, "blank", remove);
     }
 
     private insertTableOfContents(): void {

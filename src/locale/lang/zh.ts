@@ -52,6 +52,7 @@ const zh: LocaleType = {
     "menu.bullet": "无序列表",
     "menu.numbered": "有序列表",
     "menu.blockquote": "引用",
+    "menu.blankLine": "插入新行",
     "menu.code": "代码块",
     "menu.math": "数学块",
     "menu.divider": "分割线",

@@ -52,6 +52,7 @@ const zhTw: LocaleType = {
     "menu.bullet": "無序清單",
     "menu.numbered": "有序清單",
     "menu.blockquote": "引用",
+    "menu.blankLine": "插入新行",
     "menu.code": "程式碼區塊",
     "menu.math": "數學區塊",
     "menu.divider": "分割線",

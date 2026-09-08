@@ -41,6 +41,7 @@ await esbuild.build({
 		"src/slashTrigger.ts",
 		"src/attachmentLink.ts",
 		"src/codeFence.ts",
+		"src/blankLine.ts",
 		"src/menuPosition.ts",
 		"src/colorWrap.ts",
 		"src/tableOfContents.ts",

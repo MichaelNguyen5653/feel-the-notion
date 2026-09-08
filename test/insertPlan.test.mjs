@@ -238,3 +238,38 @@ test("needsBlankLine unset leaves block inserts byte-identical to before this fe
 	assert.equal(out.text, "alpha\n# ");
 	assert.equal(out.anchor, 8);
 });
+
+/**
+ * "Insert a new line".
+ *
+ * Nothing is inserted but the newline itself, so the arithmetic that matters
+ * is where the caret ends up: on the new line, not on the one it came from.
+ */
+
+test("a new line after a line with content puts the caret on the new line", () => {
+	const out = run("| a | b |", { insertText: "", asBlock: true });
+	assert.equal(out.text, "| a | b |\n");
+	assert.equal(out.anchor, 10, "past the newline, on the empty line");
+});
+
+test("a new line typed as a query leaves the line it emptied", () => {
+	// "/line" removed leaves nothing behind, so the caret stays put rather
+	// than opening a second empty line under the first.
+	const out = run("/line", {
+		insertText: "",
+		asBlock: true,
+		remove: { from: 0, to: 5 },
+	});
+	assert.equal(out.text, "");
+	assert.equal(out.anchor, 0);
+});
+
+test("a new line after text that survives the query opens a line", () => {
+	const out = run("notes /line", {
+		insertText: "",
+		asBlock: true,
+		remove: { from: 6, to: 11 },
+	});
+	assert.equal(out.text, "notes \n");
+	assert.equal(out.anchor, 7);
+});
