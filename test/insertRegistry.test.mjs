@@ -50,16 +50,21 @@ test("an empty order yields the built-in order", () => {
 });
 
 test("a stored order is honoured", () => {
-	const items = resolveMenuItems(BUILTIN_ITEMS, [], ["toc", "h1"], [], echo);
-	assert.equal(items[0].id, "toc");
-	assert.equal(items[1].id, "h1");
+	// Relative order, not adjacency. Rows the order does not name are slotted
+	// in beside their default neighbours, so two hand-named ids do not stay
+	// touching — but the sequence the user chose is never rearranged.
+	const order = ids(resolveMenuItems(BUILTIN_ITEMS, [], ["toc", "h1"], [], echo));
+	assert.ok(order.indexOf("toc") < order.indexOf("h1"));
 });
 
-test("built-ins missing from a stored order are appended, not dropped", () => {
+test("built-ins missing from a stored order are kept, never dropped", () => {
+	// The guarantee that matters: a user who saved an order before a version
+	// that adds rows still sees every row. Where they land is the slotting
+	// rule's business, tested below.
 	const items = resolveMenuItems(BUILTIN_ITEMS, [], ["toc"], [], echo);
 	assert.equal(items.length, BUILTIN_ITEMS.length);
-	assert.equal(items[0].id, "toc");
 	assert.ok(ids(items).includes("h1"));
+	assert.ok(ids(items).includes("toc"));
 });
 
 test("an unknown id in a stored order is ignored", () => {
@@ -114,12 +119,21 @@ test("a custom item can be hidden", () => {
 
 test("built-in keywords survive resolution", () => {
 	const items = resolveMenuItems(BUILTIN_ITEMS, [], ["todo"], [], echo);
-	assert.ok(items[0].keywords.includes("checklist"));
+	const todo = items.find((item) => item.id === "todo");
+	assert.ok(todo.keywords.includes("checklist"));
 });
 
 test("grouping collects consecutive runs of the same section", () => {
-	const items = resolveMenuItems(BUILTIN_ITEMS, [], ["h1", "h2", "todo", "h3"], [], echo);
-	const sections = groupBySection(items.slice(0, 4));
+	// Built literally rather than read out of resolveMenuItems: this is a test
+	// of the grouping, and taking its input from the ordering coupled it to a
+	// rule it is not about.
+	const row = (id, sectionKey) => ({ id, sectionKey, label: id, icon: "", keywords: [] });
+	const sections = groupBySection([
+		row("h1", "headings"),
+		row("h2", "headings"),
+		row("todo", "insert"),
+		row("h3", "headings"),
+	]);
 	assert.deepEqual(sections.map((s) => s.sectionKey), ["headings", "insert", "headings"]);
 	assert.deepEqual(ids(sections[0].items), ["h1", "h2"]);
 	assert.deepEqual(ids(sections[2].items), ["h3"]);
@@ -368,4 +382,52 @@ test("the new-line row is the first thing under the headings", () => {
 	const firstInsert = BUILTIN_ITEMS.findIndex((item) => item.sectionKey === "insert");
 	assert.notEqual(row, -1, "the row exists");
 	assert.equal(row, firstInsert);
+});
+
+/**
+ * Where a newly shipped built-in lands for a user who already saved an order.
+ *
+ * Appending it was safe but wrong-looking: groupBySection collects CONSECUTIVE
+ * runs, so a row appended after the meta items opened a second "Insert" header
+ * at the bottom of the menu, under a heading of its own. The row has to sit
+ * where it was designed to sit.
+ */
+
+test("a new built-in lands beside its default neighbour, not at the end", () => {
+	const saved = DEFAULT_INSERT_ORDER.filter((id) => id !== "blank");
+	const order = ids(resolveMenuItems(BUILTIN_ITEMS, [], saved, [], echo));
+	assert.equal(order[order.indexOf("blank") - 1], "h5");
+	assert.equal(order[order.indexOf("blank") + 1], "todo");
+});
+
+test("a new built-in does not open a second section of its own", () => {
+	const saved = DEFAULT_INSERT_ORDER.filter((id) => id !== "blank");
+	const sections = groupBySection(resolveMenuItems(BUILTIN_ITEMS, [], saved, [], echo));
+	const insertSections = sections.filter((s) => s.sectionKey === "insert");
+	assert.equal(insertSections.length, 1);
+	assert.equal(insertSections[0].items[0].id, "blank");
+});
+
+test("a new built-in anchors to its nearest default neighbour, not its first", () => {
+	// h5 is the closest row above it by default, so that is what it follows
+	// even though table and todo also sort before it.
+	const saved = ["table", "h5", "todo", "h1"];
+	const order = ids(resolveMenuItems(BUILTIN_ITEMS, [], saved, [], echo));
+	assert.equal(order[order.indexOf("blank") - 1], "h5");
+});
+
+test("slotting never rearranges rows the user placed by hand", () => {
+	const order = ids(resolveMenuItems(BUILTIN_ITEMS, [], ["toc", "h1"], [], echo));
+	assert.ok(order.indexOf("toc") < order.indexOf("h1"), "the chosen sequence survives");
+});
+
+test("a new built-in with no surviving neighbour above it goes before the one below", () => {
+	const order = ids(resolveMenuItems(BUILTIN_ITEMS, [], ["todo"], [], echo));
+	assert.ok(order.indexOf("h1") < order.indexOf("todo"), "h1 precedes the only stored id");
+});
+
+test("custom rows still append, having no default position", () => {
+	const custom = [{ id: "c1", label: "X", icon: "pencil", commandId: "x" }];
+	const items = resolveMenuItems(BUILTIN_ITEMS, custom, DEFAULT_INSERT_ORDER, [], echo);
+	assert.equal(items[items.length - 1].id, "c1");
 });

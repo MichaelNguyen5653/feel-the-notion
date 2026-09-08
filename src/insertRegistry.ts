@@ -104,9 +104,18 @@ export const DEFAULT_INSERT_ORDER: string[] = BUILTIN_ITEMS.map((item) => item.i
 /**
  * The rows to render, ordered and filtered.
  *
- * `order` names ids in the sequence the user chose. Anything in the pool it
- * does not name is appended in pool order, which is how a version that adds a
- * built-in reaches a user who has already saved an order.
+ * `order` names ids in the sequence the user chose. A built-in the order does
+ * not name is slotted in beside its nearest surviving neighbour from the
+ * default order, which is how a version that adds a built-in reaches a user
+ * who has already saved one.
+ *
+ * It used to be appended instead. That kept the row from vanishing but put it
+ * in the wrong place, and groupBySection collects CONSECUTIVE runs, so a row
+ * landing after the meta items opened a second "Insert" header at the bottom
+ * of the menu with one row under it.
+ *
+ * Custom rows still append: they have no default position to be slotted
+ * against, and a row the user just added belongs at the end.
  */
 export function resolveMenuItems(
 	builtins: readonly RegistryItem[],
@@ -151,12 +160,65 @@ export function resolveMenuItems(
 		if (!hiddenSet.has(id)) result.push(item);
 	}
 
+	// Default positions, for slotting in built-ins the stored order predates.
+	const rank = new Map<string, number>();
+	builtins.forEach((item, i) => rank.set(item.id, i));
+
 	for (const [id, item] of pool) {
 		if (placed.has(id)) continue;
-		if (!hiddenSet.has(id)) result.push(item);
+		placed.add(id);
+		if (hiddenSet.has(id)) continue;
+
+		const home = rank.get(id);
+		// A custom row: no default position to slot against.
+		if (home === undefined) {
+			result.push(item);
+			continue;
+		}
+		result.splice(slotFor(result, rank, home), 0, item);
 	}
 
 	return result;
+}
+
+/**
+ * Where a built-in absent from the stored order belongs in `result`.
+ *
+ * Just after the nearest row that precedes it by default, falling back to just
+ * before the nearest that follows it, and to the end when the user's order has
+ * neither.
+ *
+ * Nearest matters. Anchoring to the FIRST row that merely sorts after it would
+ * reshuffle rows the user placed by hand: with a stored order of `toc, h1`,
+ * h2 sorts before toc and would jump the queue to the top of the menu, moving
+ * a row the user deliberately put first.
+ */
+function slotFor(
+	result: readonly ResolvedItem[],
+	rank: ReadonlyMap<string, number>,
+	home: number
+): number {
+	let afterAt = -1;
+	let afterRank = -Infinity;
+	let beforeAt = -1;
+	let beforeRank = Infinity;
+
+	for (let i = 0; i < result.length; i++) {
+		const other = rank.get(result[i].id);
+		if (other === undefined) continue; // a custom row anchors nothing
+		if (other < home && other > afterRank) {
+			afterRank = other;
+			afterAt = i;
+		}
+		if (other > home && other < beforeRank) {
+			beforeRank = other;
+			beforeAt = i;
+		}
+	}
+
+	if (afterAt !== -1) return afterAt + 1;
+	if (beforeAt !== -1) return beforeAt;
+	return result.length;
 }
 
 /**
