@@ -26,6 +26,14 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.6.2
+
+Bug fixes and improvements.
+
+New features:
+
+- Insert a new line, for getting a paragraph under a table or code block that ends a note
+
 ### 0.6.1
 
 Bug fixes and improvements.
