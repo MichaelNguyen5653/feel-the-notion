@@ -440,8 +440,31 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             const lineHeight = coords.bottom - coords.top;
             top += (lineHeight - this.handleHeight) / 2;
 
-            // Calculate left position based on contentDOM offset
-            const left = handleOffsetX(m, plugin.settings.handleSide);
+            // Themes can center/pad .cm-line independently of .cm-content.
+            // Use the line box rather than coords.left, which also includes list
+            // indentation and would make the toolbar jump between list levels.
+            // Widgets without a .cm-line retain the original content-based anchor.
+            let lineOffsetLeft = m.contentOffsetLeft;
+            if (plugin.settings.handleSide === "left") {
+                const node = view.domAtPos(line.from).node;
+                const element = node.nodeType === 1 ? node as Element : node.parentElement;
+                const lineElement = element?.closest(".cm-line");
+                if (lineElement && view.contentDOM.contains(lineElement)) {
+                    const scroller = view.scrollDOM;
+                    let lineLeft = lineElement.getBoundingClientRect().left;
+                    // Native heading/list fold controls can extend into the gutter.
+                    // Reserve their hit area even while they are faded out.
+                    const foldControl = lineElement.querySelector(".collapse-indicator");
+                    const foldRect = foldControl?.getBoundingClientRect();
+                    if (foldRect && foldRect.width > 0 && foldRect.height > 0) {
+                        lineLeft = Math.min(lineLeft, foldRect.left);
+                    }
+                    lineOffsetLeft = lineLeft
+                        - scroller.getBoundingClientRect().left
+                        - scroller.clientLeft + scroller.scrollLeft;
+                }
+            }
+            const left = handleOffsetX(m, plugin.settings.handleSide, lineOffsetLeft);
 
             this.hoveredBand = { top: coords.top, bottom: (endCoords ?? coords).bottom };
 

@@ -82,7 +82,10 @@ export function isInsideHandleZone(
 }
 
 /**
- * The handle's left position, in the scroller's coordinate space.
+ * The full-width handle row's left position, in the scroller's coordinate space.
+ * For left handles, use the rendered line edge when available: themes may
+ * center .cm-line independently of .cm-content. The content edge remains the
+ * fallback for widgets that have no ordinary line element.
  *
  * The right side is clamped so the whole row stays inside the view. Without
  * the clamp, any layout where the content nearly fills its editor — readable
@@ -95,8 +98,12 @@ export function isInsideHandleZone(
  * editor that gutter legitimately starts left of the scroller's origin;
  * clamping would drag the row back on top of the text instead.
  */
-export function handleOffsetX(m: ZoneMetrics, side: HandleSide): number {
-	if (side !== "right") return m.contentOffsetLeft - HANDLE_LEFT_GAP;
+export function handleOffsetX(
+	m: ZoneMetrics,
+	side: HandleSide,
+	lineOffsetLeft = m.contentOffsetLeft
+): number {
+	if (side !== "right") return lineOffsetLeft - HANDLE_LEFT_GAP;
 
 	const past = m.contentOffsetLeft + m.contentWidth + HANDLE_RIGHT_GAP;
 	return Math.min(past, m.viewWidth - HANDLE_ROW_WIDTH - 4);
