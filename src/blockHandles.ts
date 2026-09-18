@@ -451,7 +451,15 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
                 const lineElement = element?.closest(".cm-line");
                 if (lineElement && view.contentDOM.contains(lineElement)) {
                     const scroller = view.scrollDOM;
-                    lineOffsetLeft = lineElement.getBoundingClientRect().left
+                    let lineLeft = lineElement.getBoundingClientRect().left;
+                    // Native heading/list fold controls can extend into the gutter.
+                    // Reserve their hit area even while they are faded out.
+                    const foldControl = lineElement.querySelector(".collapse-indicator");
+                    const foldRect = foldControl?.getBoundingClientRect();
+                    if (foldRect && foldRect.width > 0 && foldRect.height > 0) {
+                        lineLeft = Math.min(lineLeft, foldRect.left);
+                    }
+                    lineOffsetLeft = lineLeft
                         - scroller.getBoundingClientRect().left
                         - scroller.clientLeft + scroller.scrollLeft;
                 }
