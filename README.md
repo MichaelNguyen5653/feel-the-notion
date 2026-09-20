@@ -26,6 +26,14 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.6.3
+
+Bug fixes and improvements:
+
+- The block handle now lines up with your text on themes that center the editor.
+- The handle no longer sits on top of Obsidian's own fold arrow on headings and lists.
+- Thanks to @alwinlin23 for reporting and fixing the alignment problem.
+
 ### 0.6.2
 
 Bug fixes and improvements.
