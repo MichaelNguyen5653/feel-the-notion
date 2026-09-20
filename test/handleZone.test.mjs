@@ -90,3 +90,16 @@ test("right is clamped back inside a view the content nearly fills", () => {
 	assert.ok(x < M.contentOffsetLeft + M.contentWidth + HANDLE_RIGHT_GAP);
 	assert.ok(x + HANDLE_ROW_WIDTH <= M.viewWidth);
 });
+
+test("left follows the rendered line when a theme centers lines inside full-width content", () => {
+	const themed = { ...WIDE, contentOffsetLeft: 0, contentWidth: 1400 };
+	assert.equal(handleOffsetX(themed, "left", 175), 175 - HANDLE_LEFT_GAP);
+});
+
+test("left accepts a rendered line inset independently of the content inset", () => {
+	assert.equal(handleOffsetX(M, "left", 143), 143 - HANDLE_LEFT_GAP);
+});
+
+test("right placement is unaffected by a theme's line inset", () => {
+	assert.equal(handleOffsetX(WIDE, "right", 420), handleOffsetX(WIDE, "right"));
+});
