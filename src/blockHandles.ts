@@ -10,7 +10,7 @@ import { closeNotionBlockInsertMenus, showNotionBlockInsertMenu } from "./notion
 import { DragManager } from "./dragDrop";
 import { FrameScheduler } from "./frameScheduler";
 import { t } from "./locale/helpers";
-import { handleOffsetX, isInsideHandleZone } from "./handleZone";
+import { handleOffsetX, isInsideHandleZone, lineOffsetInScroller } from "./handleZone";
 import {
     foldBlockEffect,
     foldOffsetsAtLine,
@@ -22,7 +22,7 @@ import {
 /**
  * Editor geometry that a pointer move needs but cannot change.
  *
- * Every field here comes from a layout read — getBoundingClientRect, offsetLeft,
+ * Every field here comes from a layout read — getBoundingClientRect, clientLeft,
  * scrollTop. Reading one costs nothing on its own, but reading one AFTER a style
  * write forces the browser to recompute layout synchronously before it can
  * answer. Gathering them into a single struct lets the hot path take them all at
@@ -37,10 +37,21 @@ interface Metrics {
     contentLeft: number;
     /** Width of the content, for placing a right-side handle. */
     contentWidth: number;
-    /** Offset of the content inside the scroller, for placing the handle. */
+    /**
+     * Offset of the content inside the scroller, for placing the handle.
+     *
+     * Derived through lineOffsetInScroller rather than read off offsetLeft, so
+     * it shares one coordinate basis with the per-line measurement that
+     * overrides it. Two derivations of the same number are two things that can
+     * drift apart.
+     */
     contentOffsetLeft: number;
     scrollerTop: number;
+    /** Scroller origin and border, for rebasing any rect onto its space. */
+    scrollerLeft: number;
+    scrollerClientLeft: number;
     scrollTop: number;
+    scrollLeft: number;
 }
 
 export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromClass(class {
@@ -327,9 +338,17 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             viewHeight: viewRect.height,
             contentLeft: contentRect.left,
             contentWidth: contentRect.width,
-            contentOffsetLeft: view.contentDOM.offsetLeft,
+            contentOffsetLeft: lineOffsetInScroller({
+                lineLeft: contentRect.left,
+                scrollerLeft: scrollerRect.left,
+                scrollerClientLeft: view.scrollDOM.clientLeft,
+                scrollLeft: view.scrollDOM.scrollLeft,
+            }),
             scrollerTop: scrollerRect.top,
+            scrollerLeft: scrollerRect.left,
+            scrollerClientLeft: view.scrollDOM.clientLeft,
             scrollTop: view.scrollDOM.scrollTop,
+            scrollLeft: view.scrollDOM.scrollLeft,
         };
         return this.metrics;
     }
@@ -444,24 +463,34 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             // Use the line box rather than coords.left, which also includes list
             // indentation and would make the toolbar jump between list levels.
             // Widgets without a .cm-line retain the original content-based anchor.
+            //
+            // The scroller's own rect comes from readMetrics rather than being
+            // measured again here. It was already read there, and a second
+            // getBoundingClientRect is a second forced layout in the path this
+            // file goes to some lengths to keep cheap — see the READS comment
+            // above, foldOffsetsCache, and FrameScheduler.
             let lineOffsetLeft = m.contentOffsetLeft;
             if (plugin.settings.handleSide === "left") {
                 const node = view.domAtPos(line.from).node;
-                const element = node.nodeType === 1 ? node as Element : node.parentElement;
+                const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
                 const lineElement = element?.closest(".cm-line");
                 if (lineElement && view.contentDOM.contains(lineElement)) {
-                    const scroller = view.scrollDOM;
-                    let lineLeft = lineElement.getBoundingClientRect().left;
                     // Native heading/list fold controls can extend into the gutter.
-                    // Reserve their hit area even while they are faded out.
-                    const foldControl = lineElement.querySelector(".collapse-indicator");
-                    const foldRect = foldControl?.getBoundingClientRect();
-                    if (foldRect && foldRect.width > 0 && foldRect.height > 0) {
-                        lineLeft = Math.min(lineLeft, foldRect.left);
-                    }
-                    lineOffsetLeft = lineLeft
-                        - scroller.getBoundingClientRect().left
-                        - scroller.clientLeft + scroller.scrollLeft;
+                    // Reserve their hit area even while they are faded out, which
+                    // is why a zero-sized rect is the only one ignored.
+                    const foldRect = lineElement
+                        .querySelector(".collapse-indicator")
+                        ?.getBoundingClientRect();
+                    const foldLeft =
+                        foldRect && foldRect.width > 0 && foldRect.height > 0 ? foldRect.left : null;
+
+                    lineOffsetLeft = lineOffsetInScroller({
+                        lineLeft: lineElement.getBoundingClientRect().left,
+                        foldLeft,
+                        scrollerLeft: m.scrollerLeft,
+                        scrollerClientLeft: m.scrollerClientLeft,
+                        scrollLeft: m.scrollLeft,
+                    });
                 }
             }
             const left = handleOffsetX(m, plugin.settings.handleSide, lineOffsetLeft);
