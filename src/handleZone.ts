@@ -82,6 +82,51 @@ export function isInsideHandleZone(
 }
 
 /**
+ * A measured line edge, and the scroller it has to be expressed against.
+ *
+ * Plain numbers rather than DOMRects, so the arithmetic below stays testable
+ * without an editor. blockHandles reads the rects; this decides what they mean.
+ */
+export interface LineAnchor {
+	/** Viewport-space left edge of the rendered line, or of the content box. */
+	lineLeft: number;
+	/**
+	 * Viewport-space left edge of a native fold control, when one is drawn.
+	 * Obsidian puts heading and list collapse arrows in the gutter, left of
+	 * the text, and the toolbar has to clear them.
+	 */
+	foldLeft?: number | null;
+	/** Viewport-space left edge of the scroller. */
+	scrollerLeft: number;
+	/** The scroller's own left border, which is not content. */
+	scrollerClientLeft: number;
+	/** How far the scroller is scrolled right. */
+	scrollLeft: number;
+}
+
+/**
+ * A viewport measurement, rebased onto the scroller's coordinate space.
+ *
+ * The handle is a child of scrollDOM, so a rect read off the line means
+ * nothing until the scroller's own origin, border and scroll offset come out
+ * of it. Adding scrollLeft back cancels the shift the rect already has, which
+ * is what makes this stable while scrolling sideways — and equivalent to the
+ * contentDOM.offsetLeft it replaces, since Obsidian leaves .cm-content with no
+ * horizontal padding and positions neither .cm-sizer nor .cm-contentContainer,
+ * so the scroller is the offset parent.
+ *
+ * Deliberately unclamped, for the same reason handleOffsetX is: a left-side
+ * gutter legitimately starts left of the scroller's origin on a narrow editor.
+ */
+export function lineOffsetInScroller(anchor: LineAnchor): number {
+	const { lineLeft, foldLeft, scrollerLeft, scrollerClientLeft, scrollLeft } = anchor;
+	// min(), not "prefer the fold control": one drawn inside the text would
+	// otherwise pull the toolbar on top of the line it belongs to.
+	const leftmost = foldLeft == null ? lineLeft : Math.min(lineLeft, foldLeft);
+	return leftmost - scrollerLeft - scrollerClientLeft + scrollLeft;
+}
+
+/**
  * The full-width handle row's left position, in the scroller's coordinate space.
  * For left handles, use the rendered line edge when available: themes may
  * center .cm-line independently of .cm-content. The content edge remains the
