@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import {
 	isInsideHandleZone,
 	handleOffsetX,
+	lineOffsetInScroller,
 	HANDLE_SIDE_SLACK,
 	OPPOSITE_SIDE_SLACK,
 	HANDLE_LEFT_GAP,
@@ -102,4 +103,71 @@ test("left accepts a rendered line inset independently of the content inset", ()
 
 test("right placement is unaffected by a theme's line inset", () => {
 	assert.equal(handleOffsetX(WIDE, "right", 420), handleOffsetX(WIDE, "right"));
+});
+
+/**
+ * Converting a measured line edge into the scroller's coordinate space.
+ *
+ * The handle is a child of scrollDOM, so every viewport rect has to be
+ * rebased onto it. That arithmetic used to live inline in blockHandles, where
+ * nothing could reach it: the fold-control allowance and the scroll and border
+ * terms were three chances to be off by a few pixels with no test to say so.
+ */
+
+test("a line edge is rebased onto the scroller", () => {
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 300, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 0 }),
+		180
+	);
+});
+
+test("the scroller's own border is not counted as content", () => {
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 300, scrollerLeft: 120, scrollerClientLeft: 2, scrollLeft: 0 }),
+		178
+	);
+});
+
+test("horizontal scrolling does not move the handle off its line", () => {
+	// The rect slides left as the scroller scrolls right; adding scrollLeft
+	// back cancels it, so the result is a stable content-space offset. This is
+	// what keeps the new measurement equivalent to the offsetLeft it replaces.
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 60, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 240 }),
+		180
+	);
+});
+
+test("a native fold control sitting left of the line wins", () => {
+	// Obsidian draws heading and list collapse arrows in the gutter. The
+	// toolbar has to clear them, so the leftmost edge is what counts.
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 300, foldLeft: 276, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 0 }),
+		156
+	);
+});
+
+test("a fold control right of the line edge is ignored", () => {
+	// min(), not "prefer the fold control": a control inside the text would
+	// otherwise pull the toolbar on top of the line.
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 300, foldLeft: 340, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 0 }),
+		180
+	);
+});
+
+test("no fold control leaves the line edge alone", () => {
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 300, foldLeft: null, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 0 }),
+		180
+	);
+});
+
+test("a gutter left of the scroller origin stays negative", () => {
+	// handleOffsetX deliberately does not clamp the left side. This must not
+	// clamp either, or a narrow editor drags the row back over the text.
+	assert.equal(
+		lineOffsetInScroller({ lineLeft: 100, scrollerLeft: 120, scrollerClientLeft: 0, scrollLeft: 0 }),
+		-20
+	);
 });
