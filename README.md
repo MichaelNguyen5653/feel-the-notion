@@ -1,7 +1,5 @@
 # Feel the Notion
 
-> Recommended plugin to enhance experience: [Bullet depth markers](https://community.obsidian.md/plugins/bullet-depth-markers)
->
 > Recommended setting: Obsidian Settings → Files and Links → under Links, toggle on **Automatically update internal links**.
 
 Notion-like block editing for Obsidian's Live Preview.
@@ -20,11 +18,20 @@ Notion-like block editing for Obsidian's Live Preview.
 - **Fold blocks** — a chevron on the handle folds a block to its first line, leaving an ellipsis you click to expand it again.
 - **Move blocks together** — selecting several blocks and dragging any one of their handles moves all of them together.
 - **Custom insert menu** — insert-menu rows can be reordered, hidden, and extended with custom rows that run any Obsidian command. A custom row runs its command on a single click with no confirmation, so binding a destructive one — "Delete current file", say — gives you a one-click delete.
+- **Bullet depth markers** — optional, off by default: child bullets get their own marker in the file, `-` then `*` then `+`, and a matching ● ○ ▪ on screen. Markers can be reordered or switched off. Only lists you edit are changed. Built in from the standalone [Bullet Depth Markers](https://github.com/MichaelNguyen5653/Bullet-Depth-Markers) plugin; disable that one before turning this on.
 
 Everything behavioural has a toggle in settings.
 
 <details>
 <summary><b>Change logs</b></summary>
+
+### 0.7.0
+
+New features:
+
+- Bullet depth markers, built in and off by default
+- Reorder or switch off bullet markers in settings
+- A "What's new" card after each update
 
 ### 0.6.3
 

@@ -15,6 +15,7 @@ import {
     updateCustomItem,
 } from './insertRegistry';
 import { InsertCommandModal } from './insertCommandModal';
+import { resolveBulletMarkers } from './bulletDepth';
 
 export interface BlockPluginSettings {
     enabled: boolean;
@@ -51,6 +52,14 @@ export interface BlockPluginSettings {
     insertCustom: CustomInsertItem[];
     /** Write inserted attachments as embeds (a leading "!") rather than links. */
     embedAttachments: boolean;
+    /** Rewrite bullet markers in the file to follow nesting depth. */
+    bulletDepth: boolean;
+    /** The three legal markers in the order the user chose. Empty means - * +. */
+    bulletOrder: string[];
+    /** Markers left out of the depth cycle. */
+    bulletHidden: string[];
+    /** The release whose "What's new" card was last shown. */
+    lastSeenVersion?: string;
 }
 
 export const DEFAULT_SETTINGS: BlockPluginSettings = {
@@ -93,6 +102,13 @@ export const DEFAULT_SETTINGS: BlockPluginSettings = {
     // OFF by default, as asked: an attachment reads as a link unless it is
     // explicitly meant to render inline.
     embedAttachments: false,
+    // OFF by default: it writes to the user's notes, changing characters they
+    // typed, which nothing else in the plugin does without being asked.
+    bulletDepth: false,
+    // Empty for the same reason insertOrder is: resolveBulletMarkers fills in
+    // whatever an order does not name.
+    bulletOrder: [],
+    bulletHidden: [],
 };
 
 export class BlockPluginSettingTab extends PluginSettingTab {
@@ -100,6 +116,8 @@ export class BlockPluginSettingTab extends PluginSettingTab {
 
     /** The insert-menu list, repainted on its own so display() is never needed. */
     private insertListEl: HTMLElement | null = null;
+    /** The bullet marker list, repainted in place for the same reason. */
+    private bulletListEl: HTMLElement | null = null;
 
     constructor(app: App, plugin: NotionBlock) {
         super(app, plugin);
@@ -251,6 +269,8 @@ export class BlockPluginSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                 }));
 
+        this.renderBulletDepth(containerEl);
+
         new Setting(containerEl).setName('Insert menu').setHeading();
 
         new Setting(containerEl)
@@ -321,6 +341,111 @@ export class BlockPluginSettingTab extends PluginSettingTab {
             .setHeading();
 
         this.renderInsertItemList(containerEl);
+    }
+
+    private renderBulletDepth(containerEl: HTMLElement): void {
+        new Setting(containerEl).setName('Bullet depth markers').setHeading();
+
+        new Setting(containerEl)
+            .setName('Match bullet markers to nesting depth')
+            .setDesc(
+                'Rewrites the marker in the file as you indent: the first level uses the first '
+                + 'marker below, the next level the second, and the cycle repeats. Bullets show as '
+                + '● ○ ▪ by depth. Only lists you edit are changed. Numbered lists, code blocks '
+                + 'and frontmatter are left alone.'
+            )
+            .addToggle(toggle => toggle
+                .setValue(this.plugin.settings.bulletDepth)
+                .onChange(async (value) => {
+                    this.plugin.settings.bulletDepth = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // Two transaction filters with different sequences would each rewrite
+        // the other's markers on every edit, the last one registered winning.
+        // Nothing breaks, but the result looks like this setting is ignored.
+        //
+        // The loaded instance, not enabledPlugins: that set is the saved
+        // config, which enablePlugin does not update and which still lists a
+        // plugin that failed to load. What conflicts is the filter running.
+        const plugins = (this.app as unknown as { plugins?: { plugins?: Record<string, unknown> } }).plugins;
+        if (plugins?.plugins?.['bullet-depth-markers']) {
+            containerEl.createDiv({
+                cls: 'ftn-setting-warning',
+                text: 'The standalone Bullet Depth Markers plugin is also enabled. Disable one of them, '
+                    + 'or their marker sequences will overwrite each other.',
+            });
+        }
+
+        this.bulletListEl = containerEl.createDiv({ cls: 'ftn-insert-item-list' });
+        this.refreshBulletList();
+    }
+
+    /**
+     * The three markers as reorderable rows, each with its own switch.
+     *
+     * Same shape as the insert-menu list, and for the same reason: the order
+     * is a permutation, and which rows are on is separate from where they sit,
+     * so switching one off and on again puts it back where it was.
+     */
+    private refreshBulletList(): void {
+        const listEl = this.bulletListEl;
+        if (!listEl) return;
+        listEl.empty();
+
+        const settings = this.plugin.settings;
+        const order = resolveBulletMarkers(settings.bulletOrder, []);
+        const enabled = resolveBulletMarkers(settings.bulletOrder, settings.bulletHidden);
+        const names: Record<string, string> = { '-': 'Dash', '*': 'Asterisk', '+': 'Plus' };
+
+        order.forEach((marker, index) => {
+            const isOn = enabled.includes(marker);
+            const row = listEl.createDiv({ cls: 'ftn-insert-item-row', attr: { draggable: 'true' } });
+
+            setIcon(row.createSpan({ cls: 'ftn-insert-item-grip' }), 'grip-vertical');
+            row.createEl('code', { cls: 'ftn-bullet-marker', text: marker });
+
+            const textEl = row.createDiv({ cls: 'ftn-insert-item-text' });
+            textEl.createDiv({ cls: 'ftn-insert-item-label', text: names[marker] });
+            textEl.createDiv({
+                cls: 'ftn-insert-item-source',
+                text: isOn ? `Level ${enabled.indexOf(marker) + 1}` : 'Not used',
+            });
+
+            const toggle = row.createDiv({ cls: 'ftn-insert-item-controls' })
+                .createEl('input', { attr: { type: 'checkbox' } });
+            toggle.checked = isOn;
+            // The last marker in use cannot be switched off: an empty sequence
+            // has nothing to write, which would leave the feature on in name only.
+            toggle.disabled = isOn && enabled.length === 1;
+            toggle.addEventListener('change', () => {
+                const hidden = settings.bulletHidden.filter((m) => m !== marker);
+                settings.bulletHidden = toggle.checked ? hidden : [...hidden, marker];
+                void this.plugin.saveSettings();
+                // Repaint: every row's level number shifts when one goes on or off.
+                this.refreshBulletList();
+            });
+
+            row.addEventListener('dragstart', (event) => {
+                event.dataTransfer?.setData('text/plain', String(index));
+                row.addClass('is-dragging');
+            });
+            row.addEventListener('dragend', () => row.removeClass('is-dragging'));
+            row.addEventListener('dragover', (event) => {
+                event.preventDefault();
+                row.addClass('is-drop-target');
+            });
+            row.addEventListener('dragleave', () => row.removeClass('is-drop-target'));
+            row.addEventListener('drop', (event) => {
+                event.preventDefault();
+                row.removeClass('is-drop-target');
+                const from = Number(event.dataTransfer?.getData('text/plain'));
+                if (from === index) return;
+                settings.bulletOrder = reorderIds(order, from, index);
+                void this.plugin.saveSettings();
+                this.refreshBulletList();
+            });
+        });
     }
 
     /**

@@ -446,3 +446,95 @@ body.is-dragging-block * {
     color: var(--text-muted);
     font-size: var(--font-ui-smaller);
 }
+
+/* ==========================================================================
+   Bullet depth markers
+
+   Ported from the standalone Bullet Depth Markers plugin. Every rule is
+   scoped to body.ftn-bullet-depth, which main.ts sets only while the setting
+   is on, so with it off nothing here matches.
+
+   Bullets are styled by NESTING DEPTH, not by the character in the file.
+   That is forced: Reading view compiles -, * and + into identical <ul><li>,
+   so the character never reaches the DOM.
+
+   Cycle:  depth 1 ● disc   depth 2 ○ circle   depth 3 ▪ square   depth 4 ● …
+   ========================================================================== */
+
+/* --- Live Preview ---------------------------------------------------------
+   Obsidian tags each line HyperMD-list-line-N and draws the bullet with
+   .list-bullet:after, reading every property from a custom property EXCEPT
+   background-color, so hollow bullets need one direct override.
+   Depths 1, 4 and 7 need nothing: the filled disc is the default. */
+
+/* ○ hollow circle, depths 2 5 8. Inherits the default 0.3em so it matches
+   the parent dot. */
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-2,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-5,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-8 {
+    --list-bullet-border: 1px solid var(--list-marker-color);
+}
+
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-2 .list-bullet:after,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-5 .list-bullet:after,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-8 .list-bullet:after {
+    background-color: transparent;
+    /* Easy to miss: Obsidian's `* { box-sizing: border-box }` does not match
+       pseudo-elements and box-sizing is not inherited, so without this the
+       1px border is ADDED to 0.3em and the child bullet renders ~40% wider. */
+    box-sizing: border-box;
+}
+
+/* ▪ square, depths 3 6 9. Under the 0.3em default on purpose: a square
+   covers ~27% more area than a circle of the same width (4/π), so 0.26em
+   matches its visual weight instead of reading as the heaviest level. */
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-3,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-6,
+body.ftn-bullet-depth .markdown-source-view.mod-cm6 .HyperMD-list-line-9 {
+    --list-bullet-radius: 0;
+    --list-bullet-size: 0.26em;
+}
+
+/* --- Reading view ---------------------------------------------------------
+   Real nested <ul>, so descendant selectors give depth directly. Two things
+   to beat: Obsidian's normalize layer forces disc on every nested list, and
+   ordered lists hold a depth level in the marker model, so ol ancestors are
+   counted too. CSS cannot express an infinite cycle; unrolled to 9 levels. */
+
+body.ftn-bullet-depth .markdown-rendered ul > li { list-style-type: disc; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) ul > li { list-style-type: circle; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) ul > li { list-style-type: square; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: disc; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: circle; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: square; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: disc; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: circle; }
+body.ftn-bullet-depth .markdown-rendered :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) :is(ul, ol) ul > li { list-style-type: square; }
+
+/* Task lists draw their own checkbox; leave their marker suppressed. */
+body.ftn-bullet-depth .markdown-rendered ul > li.task-list-item { list-style-type: none; }
+
+/* --- Settings ------------------------------------------------------------- */
+
+.ftn-bullet-marker {
+    min-width: 1.5em;
+    text-align: center;
+}
+
+.ftn-setting-warning {
+    color: var(--text-error);
+    font-size: var(--font-ui-smaller);
+    margin: 4px 0 8px;
+}
+
+/* --- What's new card ------------------------------------------------------ */
+
+.ftn-whats-new ul {
+    padding-left: 1.2em;
+    margin: 0 0 8px;
+}
+
+.ftn-whats-new li {
+    margin-bottom: 8px;
+    line-height: var(--line-height-normal);
+}
