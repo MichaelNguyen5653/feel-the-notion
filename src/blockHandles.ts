@@ -20,6 +20,14 @@ import {
 } from "./blockFold";
 
 /**
+ * How far the pointer must travel from a press on the drag handle before it
+ * becomes a drag. Notion's own figure, measured at 7 px
+ * (docs/notion-drag-research.md §7). Released sooner, the press is a click
+ * and opens the block menu.
+ */
+const DRAG_THRESHOLD_PX = 7;
+
+/**
  * Editor geometry that a pointer move needs but cannot change.
  *
  * Every field here comes from a layout read — getBoundingClientRect, clientLeft,
@@ -63,6 +71,7 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
     hoveredLine: number | null = null;
     hideTimeout: number | null = null;
     dragManager: DragManager | null = null;
+    private endPress: (() => void) | null = null;
     ownerWindow: Window;
     isMouseOverHandle = false;
 
@@ -231,10 +240,63 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         });
 
         // Drag & Menu Logic
-        let dragTimeout: number | null = null;
+        //
+        // A press becomes a drag only once the pointer has moved
+        // DRAG_THRESHOLD_PX. The line is captured at the press: by the time
+        // the threshold is crossed the pointer may be over the next line, and
+        // the block under the press is the one the user grabbed.
         let isDragging = false;
+        let press: { x: number; y: number; line: number; event: MouseEvent } | null = null;
+        const pressDoc = this.ownerWindow.document;
+
+        // The line the current press began on. The handle's mouseup fires
+        // before the document's, which is where endPress clears `press`, but
+        // the menu must open for the pressed line even if the hover has since
+        // moved on, so it is kept apart.
+        // endPress clears it too, so a press that ended elsewhere cannot leave
+        // a stale line for a later mouseup on the handle.
+        let pressedLine: number | null = null;
+
+        const endPress = () => {
+            press = null;
+            pressedLine = null;
+            pressDoc.removeEventListener("mousemove", onPressMove);
+            pressDoc.removeEventListener("mouseup", endPress);
+        };
+        this.endPress = endPress;
+
+        const onPressMove = (ev: MouseEvent) => {
+            if (!press) return;
+            // No button held means the mouseup was lost (released outside the
+            // window, say). Treating the move as a drag would pick a block up
+            // with nothing pressed.
+            if (ev.buttons === 0) {
+                endPress();
+                return;
+            }
+            if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) < DRAG_THRESHOLD_PX) return;
+            const { line, event } = press;
+            endPress();
+            isDragging = true;
+            if (!this.dragManager) {
+                this.dragManager = new DragManager(plugin, view);
+            }
+            // The press event, not this move: the drag measures its grab
+            // offset from where the block was picked up.
+            this.dragManager.startDrag(line, event, () => {
+                // The document just changed under us, so any remembered
+                // line number is meaningless. Clearing it forces the next
+                // pointer move to resolve the line afresh.
+                this.hoveredLine = null;
+                this.hoveredBand = null;
+                this.isMouseOverHandle = false;
+            });
+        };
 
         this.dragButton.onmousedown = (e) => {
+            // Only the primary button arms a drag; a right or middle press
+            // must not (right has its own contextmenu handler below).
+            if (e.button !== 0) return;
             if (this.hoveredLine === null) return;
             if (this.hideTimeout) {
                 this.ownerWindow.clearTimeout(this.hideTimeout);
@@ -242,33 +304,25 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
             }
             e.preventDefault();
             e.stopPropagation();
-            
+
             isDragging = false;
-            dragTimeout = this.ownerWindow.setTimeout(() => {
-                isDragging = true;
-                if (!this.dragManager) {
-                    this.dragManager = new DragManager(plugin, view);
-                }
-                this.dragManager.startDrag(this.hoveredLine!, e, () => {
-                    // The document just changed under us, so any remembered
-                    // line number is meaningless. Clearing it forces the next
-                    // pointer move to resolve the line afresh.
-                    this.hoveredLine = null;
-                    this.hoveredBand = null;
-                    this.isMouseOverHandle = false;
-                });
-            }, 150);
+            endPress();
+            pressedLine = this.hoveredLine;
+            press = { x: e.clientX, y: e.clientY, line: this.hoveredLine, event: e };
+            pressDoc.addEventListener("mousemove", onPressMove);
+            pressDoc.addEventListener("mouseup", endPress);
         };
 
         this.dragButton.onmouseup = (_e: MouseEvent) => {
-            if (dragTimeout !== null) this.ownerWindow.clearTimeout(dragTimeout);
-            if (!isDragging && this.hoveredLine !== null) {
+            const line = pressedLine;
+            pressedLine = null;
+            if (!isDragging && line !== null) {
                 const rect = this.dragButton!.getBoundingClientRect();
                 closeNotionBlockInsertMenus();
                 showNotionBlockActionMenu(
                     plugin,
                     view,
-                    this.hoveredLine,
+                    line,
                     { x: rect.left, y: rect.bottom },
                     { avoid: { top: rect.top, bottom: rect.bottom } }
                 );
@@ -729,6 +783,8 @@ export const blockHandlesExtension = (plugin: NotionBlock) => ViewPlugin.fromCla
         this.scrollEl.removeEventListener("mousemove", this.onPointerMove);
         this.scrollEl.removeEventListener("mouseleave", this.onPointerLeave);
         this.ownerWindow.removeEventListener("resize", this.onResize);
+        // A press still waiting for the threshold holds document listeners.
+        this.endPress?.();
         // The drag manager's listeners are on the document, not on the view, so
         // they outlive the view unless it says so explicitly.
         this.dragManager?.destroy();
