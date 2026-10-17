@@ -7,6 +7,7 @@ import { blockSelectionExtension } from './blockSelection';
 import { blockKeymapExtension } from './blockKeymap';
 import { slashMenuExtension } from './slashMenu';
 import { blockFoldExtension } from './blockFold';
+import { dropParentTintField } from './dropParentTint';
 import { showNotionBlockInsertMenu } from './notionInsertMenu';
 import { t } from './locale/helpers';
 import { bulletDepthExtension, resolveBulletMarkers } from './bulletDepth';
@@ -28,6 +29,7 @@ export default class NotionBlock extends Plugin {
             slashMenuExtension(this),
             blockFoldExtension(),
             bulletDepthExtension(() => this.bulletMarkers()),
+            dropParentTintField,
         ]);
         this.syncBulletClass();
 

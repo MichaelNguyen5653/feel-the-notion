@@ -40,6 +40,13 @@ export interface DragRange {
 	 * block nest either.
 	 */
 	isFence: boolean;
+	/**
+	 * Whether the range is a multi-block selection the handle sat inside.
+	 *
+	 * Such a drag re-selects what it moved on drop, the way Notion leaves the
+	 * dropped blocks selected, so the same group can be dragged again.
+	 */
+	fromSelection: boolean;
 }
 
 /** A tab counts as 4 columns, matching Obsidian's default list indent. */
@@ -149,7 +156,7 @@ function trimBlankEdges(doc: Text, first: number, last: number): [number, number
 	return [first, last];
 }
 
-function toRange(doc: Text, first: number, last: number, isFence: boolean): DragRange {
+function toRange(doc: Text, first: number, last: number, isFence: boolean, fromSelection = false): DragRange {
 	return {
 		from: doc.line(first).from,
 		to: doc.line(last).to,
@@ -157,6 +164,7 @@ function toRange(doc: Text, first: number, last: number, isFence: boolean): Drag
 		lastLine: last,
 		indent: indentWidth(doc.line(first).text),
 		isFence,
+		fromSelection,
 	};
 }
 
@@ -188,7 +196,7 @@ export function resolveDragRange(
 				const span = spans.get(wideFirst);
 				const whollyOneFence =
 					span !== undefined && span.firstLine === wideFirst && span.lastLine === wideLast;
-				return toRange(doc, wideFirst, wideLast, whollyOneFence);
+				return toRange(doc, wideFirst, wideLast, whollyOneFence, true);
 			}
 		}
 	}
@@ -241,27 +249,63 @@ export function detectIndentUnit(doc: Text, fallback = 4): number {
 	return smallest === Infinity ? fallback : smallest;
 }
 
+/** A run of document lines, inclusive, 1-based. */
+export interface LineSpan {
+	firstLine: number;
+	lastLine: number;
+}
+
+/**
+ * Lines a drop must not read as context: the dragged block (leaving), and the
+ * hidden lines of a folded block (invisible, so never a depth Notion offers).
+ * One span or several; a list keeps every caller that passes one span working.
+ */
+type Skip = LineSpan | readonly LineSpan[];
+
+function isSkipped(n: number, skip: Skip | undefined): boolean {
+	if (!skip) return false;
+	const spans: readonly LineSpan[] = "firstLine" in skip ? [skip] : skip;
+	return spans.some((s) => n >= s.firstLine && n <= s.lastLine);
+}
+
+/**
+ * The nearest non-blank line walking from `from` in `step` direction, ignoring
+ * the lines in `skip` — the block being dragged, which is about to leave and
+ * so is context for nothing.
+ */
+function nearestContent(doc: Text, from: number, step: 1 | -1, skip?: Skip): string | null {
+	for (let n = from; n >= 1 && n <= doc.lines; n += step) {
+		if (isSkipped(n, skip)) continue;
+		const text = doc.line(n).text;
+		if (!isBlank(text)) return text;
+	}
+	return null;
+}
+
 /**
  * The indent levels a block may legally be dropped at, before `dropLineNo`.
  *
- * Markdown will not let an item be more than one level deeper than the item
- * above it — nest further and the renderer silently flattens it — so the
- * deepest offer is one level past the preceding line.
+ * CEILING: markdown will not let an item be more than one level deeper than
+ * the item above it — nest further and the renderer silently flattens it — so
+ * the deepest offer is one level past the preceding line.
  *
- * Returns a single option when there is nothing to indent under. Prose at
- * column zero offers no choice at all, which is what keeps the drag behaving
- * exactly as before in a document with no lists in it.
+ * FLOOR: a drop must never re-parent the line below it. Dropped shallower than
+ * that line, the block would adopt it — and everything nested with it — as its
+ * own children. Notion never does this (docs/notion-drag-research.md §3), so
+ * the next line's own indent is the shallowest offer.
+ *
+ * `skip` is the block being dragged, plus the hidden lines of a folded block
+ * the drop sits below. The dragged lines are leaving, so they are neither the
+ * line above nor the line below — which is what lets the last child of a list
+ * step out to its parent's depth without moving. A closed block's interior is
+ * invisible, so it is never offered as a depth (Notion does not either).
+ *
+ * Returns a single option when there is nothing to choose. Prose at column
+ * zero offers no choice at all, which is what keeps the drag behaving exactly
+ * as before in a document with no lists in it.
  */
-export function allowedIndents(doc: Text, dropLineNo: number, unit: number): number[] {
-	let prev: string | null = null;
-	for (let n = Math.min(dropLineNo - 1, doc.lines); n >= 1; n--) {
-		const text = doc.line(n).text;
-		if (!isBlank(text)) {
-			prev = text;
-			break;
-		}
-	}
-
+export function allowedIndents(doc: Text, dropLineNo: number, unit: number, skip?: Skip): number[] {
+	const prev = nearestContent(doc, Math.min(dropLineNo - 1, doc.lines), -1, skip);
 	if (prev === null) return [0];
 
 	const prevIndent = indentWidth(prev);
@@ -271,9 +315,40 @@ export function allowedIndents(doc: Text, dropLineNo: number, unit: number): num
 
 	const deepest = prevIndent + (isListItem(prev) ? unit : 0);
 
+	const next = nearestContent(doc, dropLineNo, 1, skip);
+	const floor = next === null ? 0 : indentWidth(next);
+
 	const levels: number[] = [];
-	for (let i = 0; i <= deepest; i += unit) levels.push(i);
-	return levels.length > 0 ? levels : [0];
+	for (let i = 0; i <= deepest; i += unit) {
+		if (i >= floor) levels.push(i);
+	}
+	// The line below sits deeper than anything legal here — malformed nesting.
+	// Offer the deepest legal level rather than nothing.
+	return levels.length > 0 ? levels : [deepest];
+}
+
+/**
+ * The block a drop at `indent` before `dropLineNo` would nest under: the
+ * nearest non-blank line above that sits shallower, with everything nested
+ * beneath it. Null at the top level.
+ *
+ * The drag tints this span. In Notion that tint — not the drop line — is what
+ * tells you how deep the block will land, because the lines for every legal
+ * depth overlap into one bar (docs/notion-drag-research.md §7).
+ *
+ * The dragged block's own lines are skipped: it is leaving, and can never be
+ * its own parent. So are a folded block's hidden lines, which are not there to
+ * be nested under.
+ */
+export function findDropParent(doc: Text, dropLineNo: number, indent: number, skip?: Skip): LineSpan | null {
+	if (indent === 0) return null;
+	for (let n = Math.min(dropLineNo - 1, doc.lines); n >= 1; n--) {
+		if (isSkipped(n, skip)) continue;
+		const text = doc.line(n).text;
+		if (isBlank(text)) continue;
+		if (indentWidth(text) < indent) return { firstLine: n, lastLine: findBlockEnd(doc, n) };
+	}
+	return null;
 }
 
 /** Snaps a freely-chosen indent to the nearest legal one. */
@@ -283,6 +358,22 @@ export function pickIndent(allowed: number[], desired: number): number {
 			Math.abs(candidate - desired) < Math.abs(best - desired) ? candidate : best,
 		allowed[0]
 	);
+}
+
+/**
+ * The deepest legal level whose left edge the pointer has reached.
+ *
+ * Not the nearest level. Notion switches depth exactly as the pointer crosses
+ * a level's edge (measured: docs/notion-drag-research.md §7), so moving right
+ * commits to a deeper level only once you are visibly over it. Rounding to
+ * the nearest switched halfway between edges, which reads as jumpy.
+ */
+export function pickIndentAtColumn(allowed: number[], column: number): number {
+	let picked = allowed[0];
+	for (const level of allowed) {
+		if (level <= column) picked = level;
+	}
+	return picked;
 }
 
 /**

@@ -25,6 +25,10 @@ Everything behavioural has a toggle in settings.
 <details>
 <summary><b>Change logs</b></summary>
 
+### 0.8.0
+
+- Optimize block dragging mechanics and functionalities
+
 ### 0.7.0
 
 New features:

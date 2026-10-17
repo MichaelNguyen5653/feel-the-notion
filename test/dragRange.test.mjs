@@ -18,7 +18,9 @@ import {
 	indentWidth,
 	isBlockStart,
 	allowedIndents,
+	findDropParent,
 	pickIndent,
+	pickIndentAtColumn,
 	detectIndentUnit,
 	isListItem,
 	countBlocks,
@@ -266,12 +268,48 @@ test("indented prose still offers its own depth", () => {
 	assert.equal(Math.max(...levels), 4, "prose is not a list, so no deeper level");
 });
 
+test("a drop never adopts the following deeper lines as children", () => {
+	// Between "- parent" and its child, depth 0 would make the child a child of
+	// the dropped block. Notion never re-parents a neighbour, so only the
+	// child's own depth is offered.
+	const d = listDoc(["- parent", "    - child", "- other"]);
+	assert.deepEqual(allowedIndents(d, 2, 4), [4]);
+});
+
+test("after the last child every level is still offered", () => {
+	const d = listDoc(["- parent", "    - child", "- other"]);
+	assert.deepEqual(allowedIndents(d, 3, 4), [0, 4, 8]);
+});
+
+test("the dragged block's own lines are not context", () => {
+	// Dragging "- b" to the boundary just below it: the line ABOVE the block
+	// decides the depths. Read "- b" itself and depth 8 would be offered.
+	const d = listDoc(["- a", "    - b", "- c"]);
+	assert.deepEqual(allowedIndents(d, 3, 4, { firstLine: 2, lastLine: 2 }), [0, 4]);
+	assert.deepEqual(allowedIndents(d, 2, 4, { firstLine: 2, lastLine: 2 }), [0, 4]);
+});
+
+test("a following sibling pins the floor at its own depth", () => {
+	// "- b" cannot be outdented in place while "- c" follows it: "- c" would
+	// become b's child. Only the last child can step out.
+	const d = listDoc(["- a", "    - b", "    - c"]);
+	assert.deepEqual(allowedIndents(d, 2, 4, { firstLine: 2, lastLine: 2 }), [4]);
+});
+
 test("pickIndent snaps to the nearest legal level", () => {
 	assert.equal(pickIndent([0, 4, 8], 5), 4);
 	assert.equal(pickIndent([0, 4, 8], 7), 8);
 	assert.equal(pickIndent([0, 4, 8], 100), 8, "clamps to the deepest");
 	assert.equal(pickIndent([0, 4, 8], -3), 0, "clamps to the shallowest");
 	assert.equal(pickIndent([0], 99), 0, "single option always wins");
+});
+
+test("depth is the deepest level whose edge the pointer has passed", () => {
+	assert.equal(pickIndentAtColumn([0, 4, 8], 3.9), 0);
+	assert.equal(pickIndentAtColumn([0, 4, 8], 4), 4);
+	assert.equal(pickIndentAtColumn([0, 4, 8], 7.9), 4, "never rounds up to the nearer level");
+	assert.equal(pickIndentAtColumn([0, 4, 8], 100), 8);
+	assert.equal(pickIndentAtColumn([4], -5), 4, "left of every edge lands on the shallowest");
 });
 
 test("indent unit is detected from the document", () => {
@@ -455,4 +493,47 @@ test("a code block counts as one block in the drag ghost", () => {
 
 test("counting a code block alongside prose counts each once", () => {
 	assert.equal(countBlocks(fenceDoc(), 1, 6), 3);
+});
+
+test("the parent is the nearest shallower line above the drop", () => {
+	const d = listDoc(["- a", "    - b", "        - c", "- d"]);
+	assert.deepEqual(findDropParent(d, 4, 8), { firstLine: 2, lastLine: 3 });
+	assert.deepEqual(findDropParent(d, 4, 4), { firstLine: 1, lastLine: 3 });
+	assert.equal(findDropParent(d, 4, 0), null, "top level has no parent");
+});
+
+test("the dragged block is never its own parent", () => {
+	const d = listDoc(["- a", "- b", "- c"]);
+	assert.deepEqual(findDropParent(d, 3, 4, { firstLine: 2, lastLine: 2 }), { firstLine: 1, lastLine: 1 });
+});
+
+test("a drag from a block selection says so", () => {
+	const d = listDoc(["- a", "- b", "- c"]);
+	const sel = EditorSelection.single(d.line(1).from, d.line(2).to);
+	assert.equal(resolveDragRange(d, 1, "paragraph", sel).fromSelection, true);
+	assert.equal(resolveDragRange(d, 1, "paragraph").fromSelection, false);
+	assert.equal(resolveDragRange(d, 3, "paragraph", sel).fromSelection, false, "handle outside the selection");
+});
+
+// ── a folded block's hidden lines are not drop context ──────────────────────
+
+test("a closed block's hidden lines offer no depths", () => {
+	// Collapsed "- a" hides lines 2-3. Below it, Notion offers only the closed
+	// block's own depth and shallower, never the invisible children's.
+	const d = listDoc(["- a", "    - b", "        - c", "- d"]);
+	assert.deepEqual(allowedIndents(d, 4, 4, [{ firstLine: 2, lastLine: 3 }]), [0, 4]);
+	assert.deepEqual(allowedIndents(d, 4, 4), [0, 4, 8, 12], "visible, they would be offered");
+});
+
+test("the drop parent skips every listed span", () => {
+	const d = listDoc(["- a", "    - b", "        - c", "- d"]);
+	const hidden = { firstLine: 2, lastLine: 3 };
+	assert.deepEqual(findDropParent(d, 4, 4, [hidden]), { firstLine: 1, lastLine: 3 });
+	assert.deepEqual(findDropParent(d, 4, 8, [hidden]), { firstLine: 1, lastLine: 3 }, "never a hidden line");
+	assert.deepEqual(findDropParent(d, 4, 8), { firstLine: 2, lastLine: 3 });
+});
+
+test("a single span still works as skip", () => {
+	const d = listDoc(["- a", "- b", "- c"]);
+	assert.deepEqual(allowedIndents(d, 3, 4, { firstLine: 2, lastLine: 2 }), [0, 4]);
 });

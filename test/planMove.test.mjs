@@ -10,8 +10,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EditorState } from "@codemirror/state";
-import { resolveDragRange } from "./.build/dragRange.js";
-import { planBlockMove, applyChanges } from "./.build/planMove.js";
+import { resolveDragRange, reindentBlock } from "./.build/dragRange.js";
+import { planBlockMove, applyChanges, isNoOpMove, movedBlockRange } from "./.build/planMove.js";
 
 /** Simulates a full drag: grab `fromLine`, drop before `toLine` at `indent`. */
 function drag(lines, fromLine, toLine, indent = null) {
@@ -265,4 +265,70 @@ test("an indented code block keeps its own indent when moved", () => {
 		drag(["- item", "  ```", "  code", "  ```", "- other"], 2, 6),
 		["- item", "- other", "  ```", "  code", "  ```"]
 	);
+});
+
+// ── re-indent in place ─────────────────────────────────────────────────────
+
+test("dragging the last child left outdents it in place", () => {
+	assert.deepEqual(drag(["- a", "    - b", "- c"], 2, 3, 0), ["- a", "- b", "- c"]);
+});
+
+test("the same outdent works from the block's top edge", () => {
+	assert.deepEqual(drag(["- a", "    - b", "- c"], 2, 2, 0), ["- a", "- b", "- c"]);
+});
+
+test("dragging right indents in place", () => {
+	assert.deepEqual(drag(["- a", "- b"], 2, 3, 4), ["- a", "    - b"]);
+});
+
+test("a drop strictly inside the block is a no-op, whatever the depth", () => {
+	// Grabbing "- a" carries its children, so line 2 is inside the block.
+	assert.deepEqual(drag(["- a", "    - b", "    - c"], 1, 2, 4), ["- a", "    - b", "    - c"]);
+});
+
+test("isNoOpMove: inside the span, or its own edge at its own depth", () => {
+	const source = { from: 0, to: 0, text: "", indent: 4, firstLine: 3, lastLine: 5 };
+	assert.equal(isNoOpMove(source, 4, 0), true, "strictly inside");
+	assert.equal(isNoOpMove(source, 3, 4), true, "top edge, same depth");
+	assert.equal(isNoOpMove(source, 6, 4), true, "bottom edge, same depth");
+	assert.equal(isNoOpMove(source, 6, 0), false, "bottom edge, new depth");
+	assert.equal(isNoOpMove(source, 2, 4), false, "outside");
+});
+
+// ── where the moved block lands ────────────────────────────────────────────
+
+test("movedBlockRange covers exactly the moved text in the new document", () => {
+	const cases = [
+		{ lines: ["- a", "- b", "- c"], from: 1, to: 4, indent: null }, // to the end
+		{ lines: ["- a", "- b", "- c"], from: 3, to: 1, indent: null }, // to the top
+		{ lines: ["- a", "- b", "- c"], from: 1, to: 3, indent: null }, // down, mid-document
+		{ lines: ["- a", "    - b", "- c"], from: 2, to: 3, indent: 0 }, // in place
+	];
+	for (const c of cases) {
+		const text = c.lines.join("\n");
+		const doc = EditorState.create({ doc: text }).doc;
+		const range = resolveDragRange(doc, c.from, "paragraph");
+		const source = {
+			from: range.from,
+			to: range.to,
+			text: doc.sliceString(range.from, range.to),
+			indent: range.indent,
+			firstLine: range.firstLine,
+			lastLine: range.lastLine,
+		};
+		const indent = c.indent ?? range.indent;
+		const changes = planBlockMove(doc, source, c.to, indent);
+		const out = applyChanges(text, changes);
+		const landed = movedBlockRange(doc, changes);
+		assert.equal(
+			out.slice(landed.from, landed.to),
+			reindentBlock(source.text, source.indent, indent),
+			`case ${c.from} -> ${c.to}`
+		);
+	}
+});
+
+test("movedBlockRange is null for a no-op", () => {
+	const doc = EditorState.create({ doc: "- a" }).doc;
+	assert.equal(movedBlockRange(doc, []), null);
 });
